@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OrcaVoice",
+  "version": "0.1.0",
+  "identifier": "com.squarecirclelabs.orcavoice",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "OrcaVoice",
+        "width": 310,
+        "height": 60,
+        "minWidth": 280,
+        "minHeight": 60,
+        "maxWidth": 400,
+        "maxHeight": 480,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "skipTaskbar": true,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "visible": false,
+        "center": false,
+        "x": 560,
+        "y": 80
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": "all",
+    "publisher": "SquareCircle Labs",
+    "copyright": "Copyright 2026 SquareCircle Labs",
+    "category": "Productivity",
+    "shortDescription": "System-wide speech-to-text dictation.",
+    "longDescription": "OrcaVoice is a clean-room speech-to-text dictation app with Groq/OpenAI provider switching.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": null
+    }
+  }
+}

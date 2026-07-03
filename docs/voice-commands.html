@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Commands — OrcaVoice</title>
+<style>
+  :root {
+    --surface: #0d1017;
+    --surface-2: #131722;
+    --surface-3: #191f2b;
+    --accent: #ff4057;
+    --text: #f4f6fb;
+    --muted: #8b95a7;
+    --good: #31d07f;
+    --purple: #b15cff;
+    --code-bg: #1a1f2e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--surface);
+    color: var(--text);
+    line-height: 1.65;
+    padding: 0 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    padding: 64px 0 48px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 2.2rem;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+  }
+
+  header h1 span {
+    color: var(--accent);
+  }
+
+  header p {
+    color: var(--muted);
+    font-size: 1.05rem;
+  }
+
+  section {
+    margin-bottom: 44px;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+
+  p {
+    margin-bottom: 14px;
+    color: #d3d8e2;
+  }
+
+  ol, ul {
+    margin: 0 0 14px 22px;
+    color: #d3d8e2;
+  }
+
+  li {
+    margin-bottom: 8px;
+  }
+
+  .steps {
+    background: var(--surface-2);
+    border-radius: 14px;
+    padding: 24px 24px 24px 48px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .keyword {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .examples {
+    display: grid;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .example-card {
+    background: var(--surface-2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: border-color 200ms ease;
+  }
+
+  .example-card:hover {
+    border-color: rgba(255,64,87,0.3);
+  }
+
+  .example-card .say {
+    flex: 1;
+  }
+
+  .example-card .label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+
+  .example-card .phrase {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .example-card .arrow {
+    color: var(--accent);
+    font-size: 1.2rem;
+    font-weight: 900;
+  }
+
+  .example-card .result {
+    flex: 1;
+  }
+
+  .toggle-box {
+    background: var(--surface-2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 24px;
+  }
+
+  .toggle-visual {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .toggle-switch {
+    width: 44px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--accent);
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: "";
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    position: absolute;
+    top: 3px;
+    right: 3px;
+  }
+
+  .toggle-label {
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+
+  .badge-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  .badge.purple {
+    color: var(--purple);
+    background: rgba(177,92,255,0.14);
+    border: 1px solid rgba(177,92,255,0.3);
+  }
+
+  .badge.green {
+    color: var(--good);
+    background: rgba(49,208,127,0.14);
+    border: 1px solid rgba(49,208,127,0.3);
+  }
+
+  .badge.gray {
+    color: var(--muted);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  .tip-box {
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+  }
+
+  .tip-box strong {
+    color: var(--accent);
+  }
+
+  footer {
+    text-align: center;
+    padding-top: 32px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 540px) {
+    header h1 { font-size: 1.7rem; }
+    .example-card { flex-direction: column; align-items: flex-start; }
+    .example-card .arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Voice <span>Commands</span></h1>
+    <p>Open apps by speaking instead of typing.</p>
+  </header>
+
+  <section>
+    <h2>How to use them</h2>
+    <div class="steps">
+      <ol>
+        <li>Hold your hotkey to start recording.</li>
+        <li>Say <span class="keyword">"open"</span> followed by the app name &mdash; for example, "open chrome".</li>
+        <li>Release the hotkey.</li>
+      </ol>
+      <p>OrcaVoice launches the app instead of pasting text.</p>
+      <p>You can also say <span class="keyword">"launch"</span> or <span class="keyword">"start"</span> instead of "open." All three words work the same way.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What app names work</h2>
+    <p>Say the name your computer uses for the app. On Windows, that means the name you see when you search the Start menu. On Mac, it is the name under the app icon in Applications or Launchpad.</p>
+
+    <div class="examples">
+      <div class="example-card">
+        <div class="say">
+          <div class="label">You say</div>
+          <div class="phrase">open chrome</div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="result">
+          <div class="label">Opens</div>
+          <div class="phrase">Google Chrome</div>
+        </div>
+      </div>
+      <div class="example-card">
+        <div class="say">
+          <div class="label">You say</div>
+          <div class="phrase">launch notepad</div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="result">
+          <div class="label">Opens</div>
+          <div class="phrase">Notepad</div>
+        </div>
+      </div>
+      <div class="example-card">
+        <div class="say">
+          <div class="label">You say</div>
+          <div class="phrase">start terminal</div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="result">
+          <div class="label">Opens</div>
+          <div class="phrase">Terminal</div>
+        </div>
+      </div>
+      <div class="example-card">
+        <div class="say">
+          <div class="label">You say</div>
+          <div class="phrase">open spotify</div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="result">
+          <div class="label">Opens</div>
+          <div class="phrase">Spotify</div>
+        </div>
+      </div>
+      <div class="example-card">
+        <div class="say">
+          <div class="label">You say</div>
+          <div class="phrase">open code</div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="result">
+          <div class="label">Opens</div>
+          <div class="phrase">Visual Studio Code</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:18px;">If you are not sure of the exact name, check how the app appears in your Start menu, Launchpad, or app drawer.</p>
+  </section>
+
+  <section>
+    <h2>Turn voice commands on or off</h2>
+    <div class="toggle-box">
+      <div class="toggle-visual">
+        <div class="toggle-switch"></div>
+        <span class="toggle-label">Voice commands ("open [app]")</span>
+      </div>
+      <ol>
+        <li>Open the settings panel (click the <strong>&middot;&middot;&middot;</strong> button).</li>
+        <li>Find the checkbox labeled <strong>Voice commands ("open [app]")</strong>.</li>
+        <li>Check the box to turn voice commands on. Uncheck it to turn them off.</li>
+      </ol>
+      <p>Voice commands are turned on by default.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>When an app is not found</h2>
+    <p>If OrcaVoice cannot find or open the app you named, it falls back to normal behavior. Your spoken words get pasted as text wherever your cursor is. Nothing breaks &mdash; you just get text instead of a launched app.</p>
+
+    <div class="badge-row" style="margin-top:20px;">
+      <span class="badge purple">Command</span>
+      <span class="badge green">Enhanced</span>
+      <span class="badge gray">Raw</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--muted);">When a command runs, you will see a purple <strong>Command</strong> badge. Normal dictation shows <strong>Enhanced</strong> or <strong>Raw</strong>.</p>
+  </section>
+
+  <section>
+    <h2>Tips</h2>
+    <div class="tip-box">
+      <p><strong>Say only one app name.</strong> "open chrome and firefox" will try to find an app called "chrome and firefox."</p>
+    </div>
+    <div class="tip-box">
+      <p><strong>The match is exact.</strong> "open chrome" works. "open the chrome browser" will try to find an app called "the chrome browser" and may fail.</p>
+    </div>
+    <div class="tip-box">
+      <p><strong>Voice commands skip text enhancement.</strong> Saying "open chrome" will never rewrite your words or send them to the grammar checker.</p>
+    </div>
+  </section>
+
+  <footer>
+    OrcaVoice &mdash; System-wide speech-to-text dictation.
+  </footer>
+
+</div>
+</body>
+</html>

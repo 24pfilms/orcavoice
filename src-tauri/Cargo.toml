@@ -1,0 +1,36 @@
+[package]
+name = "orcavoice"
+version = "0.1.0"
+description = "System-wide speech-to-text dictation with Groq/OpenAI provider switching."
+authors = ["SquareCircle Labs"]
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "orcavoice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+anyhow = "1.0.103"
+chrono = { version = "0.4.45", features = ["serde"] }
+cpal = "0.18.1"
+enigo = "0.6.1"
+hound = "3.5.1"
+keyring = { version = "4.1.2", features = ["v1"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "multipart", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tauri = { version = "2.11.5", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-autostart = "2.5"
+tauri-plugin-clipboard-manager = "2.3.2"
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-store = "2.4.3"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time"] }
+uuid = { version = "1.23.4", features = ["v4", "serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_WindowsAndMessaging"] }
