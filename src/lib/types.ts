@@ -19,6 +19,7 @@ export interface AppSettings {
   retain_audio: boolean;
   output_mode: string;
   bubble_outline: string;
+  outline_width: number;
   groq_api_key: string;
   openai_api_key: string;
   enhancement_model: string;

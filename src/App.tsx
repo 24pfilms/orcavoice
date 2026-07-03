@@ -3,6 +3,7 @@ import {
   cancelRecording,
   clearApiKey,
   disableAutostart,
+  duckAudio,
   enableAutostart,
   getSecretStatus,
   getSettings,
@@ -10,6 +11,8 @@ import {
   isAutostartEnabled,
   isRecording,
   onHotkeyToggle,
+  playFeedbackTone,
+  restoreAudio,
   saveSettings,
   setApiKey,
   showCompactOverlay,
@@ -17,6 +20,7 @@ import {
   startOverlayDrag,
   startRecording,
   stopAndTranscribe,
+  unduckAudio,
 } from "./lib/tauri";
 import type { AppSettings, DictationMode, SecretStatus, SpeechProvider, TranscriptionOperation } from "./lib/types";
 import "./styles.css";
@@ -75,6 +79,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    void restoreAudio();
     refresh().catch((err: unknown) => setError(formatError(err)));
   }, [refresh]);
 
@@ -88,7 +93,8 @@ export default function App() {
     try {
       const backendRecording = await isRecording();
       if (backendRecording) {
-        playTone(420, 90);
+        await unduckAudio();
+        await playFeedbackTone("stop");
         await showCompactOverlay();
         setBusy(true);
         setRecording(false);
@@ -110,8 +116,9 @@ export default function App() {
           await showSettingsOverlay();
           return;
         }
+        await playFeedbackTone("start");
         await startRecording();
-        playTone(660, 70);
+        await duckAudio();
         await showCompactOverlay();
         setRecording(true);
         setStatus("Listening");
@@ -121,6 +128,7 @@ export default function App() {
       setStatus("Error");
       await showCompactOverlay();
       await cancelRecording();
+      await unduckAudio();
       setRecording(false);
     } finally {
       setBusy(false);
@@ -157,6 +165,8 @@ export default function App() {
       const saved = await saveSettings(nextSettings);
       setSettings(saved);
       setStatus("Saved");
+      setSettingsOpen(false);
+      await showCompactOverlay();
     } catch (err) {
       setError(formatError(err));
     }
@@ -187,6 +197,7 @@ export default function App() {
 
   async function cancelAndHide() {
     await cancelRecording();
+    await unduckAudio();
     setRecording(false);
     setBusy(false);
     setError("");
@@ -215,6 +226,16 @@ export default function App() {
     setSettings({ ...settings, ...patch });
   }
 
+  function updateProviderSettings(field: "language" | "prompt", value: string) {
+    if (!settings) return;
+    const key = settings.active_provider === "groq" ? "groq" : "openai";
+    const updated = {
+      ...settings,
+      [key]: { ...settings[key], [field]: value },
+    };
+    setSettings(updated);
+  }
+
   async function updateAndPersistSettings(patch: Partial<AppSettings>) {
     if (!settings) return;
     const nextSettings = { ...settings, ...patch };
@@ -223,35 +244,69 @@ export default function App() {
   }
 
   if (!settings) {
-    return <main className="overlay-root compact"><div className="toolbar loading">OrcaVoice</div></main>;
+    return <main className="overlay-root compact"><div className="pill-group loading-pill">OrcaVoice</div></main>;
   }
 
   return (
     <main
       className={`overlay-root ${settingsOpen ? "expanded" : "compact"}`}
-      style={{ "--border": settings.bubble_outline } as CSSProperties}
+      style={{ "--border": settings.bubble_outline, "--outline-width": `${settings.outline_width}px` } as CSSProperties}
     >
-      <section className={`toolbar ${recording ? "is-recording" : ""} ${busy ? "is-busy" : ""} ${error ? "is-error" : ""}`}>
-        <button className="grab-handle" title="Drag OrcaVoice" onPointerDown={() => void startOverlayDrag()}>
-          <span />
+      <section className={`toolbar-bar ${recording ? "is-recording" : ""} ${busy ? "is-busy" : ""} ${error ? "is-error" : ""}`}>
+        {/* Pill 1: Drag + Language */}
+        <div className="pill-group">
+          <button className="icon-btn grab-handle" title="Drag OrcaVoice" onPointerDown={() => void startOverlayDrag()}>
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+              <rect x="2" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
+              <rect x="8.8" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
+            </svg>
+          </button>
+          <span className="lang-label" title="Language">{(activeProviderSettings?.language === "auto" || !activeProviderSettings?.language) ? "AUTO" : activeProviderSettings.language.toUpperCase()}</span>
+        </div>
+
+        {/* Record button — standalone */}
+        <button className="record-btn" disabled={busy} onClick={() => void toggleRecording()} title={recording ? "Stop and create text" : "Start recording"}>
+          {recording ? (
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+              <rect x="2" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
+              <rect x="8.8" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3}>
+              <rect x="6" y="2" width="4" height="8" rx="2" />
+              <path d="M4 8a4 4 0 0 0 8 0" />
+              <line x1="8" y1="12" x2="8" y2="14" />
+              <line x1="5.5" y1="14" x2="10.5" y2="14" />
+            </svg>
+          )}
         </button>
-        <button className="lang-chip" title="Language">{activeProviderSettings?.language || "en"}</button>
-        <button className="record-button" disabled={busy} onClick={() => void toggleRecording()} title={recording ? "Stop and create text" : "Start recording"}>
-          <span className={recording ? "stop-glyph" : "mic-glyph"} />
-        </button>
-        <button className="mode-dot" title={`Mode: ${modeLabels[settings.mode]}`} onClick={() => void updateAndPersistSettings({ mode: nextMode(settings.mode) })}>
-          <span>{modeInitial(settings.mode)}</span>
-        </button>
-        <button className="provider-chip" title={`Provider: ${providerName}`} onClick={() => void updateAndPersistSettings({ active_provider: activeProvider === "groq" ? "open-ai" : "groq" })}>
-          {activeProvider === "groq" ? "G" : "O"}
-        </button>
-        <button className="status-orb" title={compactStatus}>
-          <span />
-        </button>
-        <button className="settings-button" onClick={() => void toggleSettings()} title="Settings">···</button>
-        <button className="trash-button" onClick={() => void cancelAndHide()} title="Cancel and hide">
-          <span />
-        </button>
+
+        {/* Pill 2: Mode + Provider + Status */}
+        <div className="pill-group">
+          <button className="mode-circle" title={`Mode: ${modeLabels[settings.mode]}`} onClick={() => void updateAndPersistSettings({ mode: nextMode(settings.mode) })}>
+            {modeInitial(settings.mode)}
+          </button>
+          <button className="provider-circle" title={`Provider: ${providerName}`} onClick={() => void updateAndPersistSettings({ active_provider: activeProvider === "groq" ? "open-ai" : "groq" })}>
+            {activeProvider === "groq" ? "G" : "O"}
+          </button>
+          <span className="status-dot" title={compactStatus} />
+        </div>
+
+        {/* Pill 3: Settings + Cancel */}
+        <div className="pill-group">
+          <button className="icon-btn" onClick={() => void toggleSettings()} title="Settings">
+            <svg width="15" height="4" viewBox="0 0 15 4">
+              <circle cx="2" cy="2" r="1.6" fill="currentColor" />
+              <circle cx="7.5" cy="2" r="1.6" fill="currentColor" />
+              <circle cx="13" cy="2" r="1.6" fill="currentColor" />
+            </svg>
+          </button>
+          <button className="icon-btn" onClick={() => void cancelAndHide()} title="Cancel and hide">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3}>
+              <path d="M3 4.5h10M6.3 4.5V3a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v1.5M4.3 4.5l.6 8.6a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.6-8.6" />
+            </svg>
+          </button>
+        </div>
       </section>
 
       {settingsOpen ? (
@@ -274,17 +329,6 @@ export default function App() {
           ) : null}
 
           <label>
-            Provider
-            <select
-              value={settings.active_provider}
-              onChange={(event) => updateSettings({ active_provider: event.target.value as SpeechProvider })}
-            >
-              <option value="groq">Groq — fast Whisper</option>
-              <option value="open-ai">OpenAI — transcribe</option>
-            </select>
-          </label>
-
-          <label>
             Mode
             <select value={settings.mode} onChange={(event) => updateSettings({ mode: event.target.value as DictationMode })}>
               <option value="raw">Raw dictation</option>
@@ -297,6 +341,54 @@ export default function App() {
 
           <div className="two-mini-fields">
             <label>
+              Language
+              <select
+                value={activeProviderSettings?.language || "en"}
+                onChange={(event) => updateProviderSettings("language", event.target.value)}
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="nl">Dutch</option>
+                <option value="ru">Russian</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="hi">Hindi</option>
+                <option value="ar">Arabic</option>
+                <option value="tr">Turkish</option>
+                <option value="pl">Polish</option>
+                <option value="uk">Ukrainian</option>
+              </select>
+            </label>
+            <label>
+              Provider
+              <select
+                value={settings.active_provider}
+                onChange={(event) => updateSettings({ active_provider: event.target.value as SpeechProvider })}
+              >
+                <option value="groq">Groq — fast</option>
+                <option value="open-ai">OpenAI — quality</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Custom vocabulary
+            <input
+              type="text"
+              placeholder="names, jargon, acronyms (comma-separated)"
+              value={activeProviderSettings?.prompt || ""}
+              onChange={(event) => updateProviderSettings("prompt", event.target.value)}
+            />
+          </label>
+
+          <div className="two-mini-fields">
+            <label>
               Trigger key
               <input value={settings.hotkey} onChange={(event) => updateSettings({ hotkey: event.target.value })} />
             </label>
@@ -305,6 +397,18 @@ export default function App() {
               <input type="color" value={settings.bubble_outline} onChange={(event) => updateSettings({ bubble_outline: event.target.value })} />
             </label>
           </div>
+
+          <label>
+            Outline width ({settings.outline_width}px)
+            <input
+              type="range"
+              min={0}
+              max={4}
+              step={1}
+              value={settings.outline_width}
+              onChange={(event) => updateAndPersistSettings({ outline_width: Number(event.target.value) })}
+            />
+          </label>
 
           <label>
             Enhancement model
@@ -357,28 +461,6 @@ function nextMode(mode: DictationMode): DictationMode {
 
 function modeInitial(mode: DictationMode) {
   return modeLabels[mode].slice(0, 1);
-}
-
-function playTone(frequency: number, durationMs: number) {
-  try {
-    const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const context = new AudioContextClass();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + durationMs / 1000);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + durationMs / 1000);
-    window.setTimeout(() => void context.close(), durationMs + 40);
-  } catch {
-    // Audio feedback is best-effort; dictation should never fail because a device blocks sound.
-  }
 }
 
 function formatError(err: unknown) {

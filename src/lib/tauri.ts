@@ -42,6 +42,22 @@ export function isRecording() {
   return invoke<boolean>("is_recording");
 }
 
+export function duckAudio() {
+  return invoke<void>("duck_audio");
+}
+
+export function unduckAudio() {
+  return invoke<void>("unduck_audio");
+}
+
+export function restoreAudio() {
+  return invoke<void>("restore_audio");
+}
+
+export function playFeedbackTone(kind: "start" | "stop") {
+  return invoke<void>("play_feedback_tone", { kind });
+}
+
 export function startRecording() {
   return invoke<void>("start_recording");
 }

@@ -1,5 +1,7 @@
 mod audio;
+mod ducking;
 mod error;
+mod feedback;
 mod history;
 mod hotkey;
 mod output;
@@ -88,6 +90,29 @@ fn is_recording(recorder: State<RecorderState>) -> bool {
 }
 
 #[tauri::command]
+fn duck_audio() {
+    ducking::duck_audio();
+}
+
+#[tauri::command]
+fn unduck_audio() {
+    ducking::unduck_audio();
+}
+
+#[tauri::command]
+fn restore_audio() {
+    ducking::restore_audio();
+}
+
+#[tauri::command]
+fn play_feedback_tone(kind: String) {
+    match kind.as_str() {
+        "stop" => feedback::play_stop_tone(),
+        _ => feedback::play_start_tone(),
+    }
+}
+
+#[tauri::command]
 fn start_recording(recorder: State<RecorderState>) -> Result<(), String> {
     audio::start_recording(&recorder).map_err(String::from)
 }
@@ -163,7 +188,7 @@ fn show_compact_overlay(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn show_settings_overlay(app: AppHandle) -> Result<(), String> {
-    set_main_window(&app, 366.0, 460.0, true)
+    set_main_window(&app, 396.0, 540.0, true)
 }
 
 #[tauri::command]
@@ -241,6 +266,8 @@ pub fn run() {
                     .build(),
             )?;
 
+            ducking::restore_audio();
+
             let settings = settings::load_settings(&app_handle)?;
             if let Err(error) = hotkey::register_hotkey(&app_handle, &settings.hotkey) {
                 eprintln!("OrcaVoice hotkey registration failed: {error}");
@@ -258,6 +285,10 @@ pub fn run() {
             clear_api_key,
             list_microphones,
             is_recording,
+            duck_audio,
+            unduck_audio,
+            restore_audio,
+            play_feedback_tone,
             start_recording,
             cancel_recording,
             stop_and_transcribe,

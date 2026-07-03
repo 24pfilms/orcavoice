@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub output_mode: String,
     #[serde(default = "default_bubble_outline")]
     pub bubble_outline: String,
+    #[serde(default = "default_outline_width")]
+    pub outline_width: u32,
     #[serde(default)]
     pub groq_api_key: String,
     #[serde(default)]
@@ -82,6 +84,7 @@ impl Default for AppSettings {
             retain_audio: false,
             output_mode: "clipboard-paste".to_string(),
             bubble_outline: default_bubble_outline(),
+            outline_width: default_outline_width(),
             groq_api_key: String::new(),
             openai_api_key: String::new(),
             enhancement_model: default_enhancement_model(),
@@ -91,6 +94,10 @@ impl Default for AppSettings {
 
 fn default_bubble_outline() -> String {
     "#ff4057".to_string()
+}
+
+fn default_outline_width() -> u32 {
+    1
 }
 
 fn default_enhancement_model() -> String {

@@ -18,7 +18,8 @@ OrcaVoice lives hidden in your system tray. Press your trigger key (default: `\`
 - **Groq Whisper Large v3 Turbo** for sub-second transcription
 - **OpenAI gpt-4o-transcribe** as an alternative provider
 - **One-key toggle** — press `\` to start, press again to stop and paste
-- **Audio feedback** — subtle start/stop beeps so you know it's listening
+- **Audio feedback** — native start/stop WAV sound so you know it's listening
+- **System audio ducking** — mutes other app audio while recording, then restores it on stop
 - **Visual feedback** — pulsing status dot and border glow during recording
 - **Movable** — drag the bubble anywhere with the grab handle
 - **Customizable outline** — pick your own bubble accent color
@@ -70,9 +71,35 @@ npm run tauri:build
 
 ## Using OrcaVoice
 
-1. Press `\` (or your configured trigger key) — the bubble appears
-2. Speak naturally
-3. Press `\` again — text is transcribed and pasted into your active app
+1. Press `\` (or your configured trigger key) — the bubble appears and the start sound plays
+2. Speak naturally — other app audio is muted while recording
+3. Press `\` again — the stop sound plays, audio is restored, and text is transcribed/pasted
+
+### Sound effects and audio ducking
+
+This part was deliberately built around the working Windows behavior:
+
+- **SFX playback:** `src-tauri/src/feedback.rs`
+- **SFX asset:** `src-tauri/resources/sfx-stop.wav`
+- **Current behavior:** the same end/done WAV is used for both start and stop feedback
+- **Playback API:** Windows `PlaySoundW` with an embedded WAV copied to the temp directory
+- **Ducking:** `src-tauri/src/ducking.rs` mutes other process audio sessions after the start SFX plays
+- **Recovery:** app launch, stop, cancel, and error paths call audio recovery so sessions do not stay muted
+
+To change the sound effect, replace `src-tauri/resources/sfx-stop.wav` with a short PCM WAV file. Recommended format: mono, 44.1 kHz, 16-bit PCM, under 500 ms.
+
+Keep this order for reliable behavior:
+
+```text
+Start: play SFX → start recording → duck other audio
+Stop: restore other audio → play SFX → transcribe/paste
+```
+
+Avoid replacing this with WebAudio or `Beep()`:
+
+- WebAudio can be silent from the global-hotkey path.
+- `Beep()` is audible but harsh/distorted and has no useful volume control.
+- Ducking before the start SFX can mute the SFX itself.
 
 ### Settings popover
 
