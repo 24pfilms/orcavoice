@@ -80,13 +80,13 @@ npm run tauri:build
 This part was deliberately built around the working Windows behavior:
 
 - **SFX playback:** `src-tauri/src/feedback.rs`
-- **SFX asset:** `src-tauri/resources/sfx-stop.wav`
-- **Current behavior:** the same end/done WAV is used for both start and stop feedback
+- **SFX assets:** `src-tauri/resources/sfx-start.wav` and `src-tauri/resources/sfx-stop.wav`
+- **Current behavior:** start feedback uses the end/done WAV pitched up 15%; stop feedback uses the original end/done WAV
 - **Playback API:** Windows `PlaySoundW` with an embedded WAV copied to the temp directory
 - **Ducking:** `src-tauri/src/ducking.rs` mutes other process audio sessions after the start SFX plays
 - **Recovery:** app launch, stop, cancel, and error paths call audio recovery so sessions do not stay muted
 
-To change the sound effect, replace `src-tauri/resources/sfx-stop.wav` with a short PCM WAV file. Recommended format: mono, 44.1 kHz, 16-bit PCM, under 500 ms.
+To change the sound effect, replace `src-tauri/resources/sfx-stop.wav` with a short PCM WAV file, then regenerate `src-tauri/resources/sfx-start.wav` as the 15% pitch-up variant. Recommended format: mono, 44.1 kHz, 16-bit PCM, under 500 ms.
 
 Keep this order for reliable behavior:
 

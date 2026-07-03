@@ -6,21 +6,22 @@ mod imp {
     use std::sync::OnceLock;
     use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_FILENAME, SND_NODEFAULT};
 
-    const FEEDBACK_SFX: &[u8] = include_bytes!("../resources/sfx-stop.wav");
+    const START_SFX: &[u8] = include_bytes!("../resources/sfx-start.wav");
+    const STOP_SFX: &[u8] = include_bytes!("../resources/sfx-stop.wav");
 
-    static FEEDBACK_SFX_PATH: OnceLock<PathBuf> = OnceLock::new();
+    static START_SFX_PATH: OnceLock<PathBuf> = OnceLock::new();
+    static STOP_SFX_PATH: OnceLock<PathBuf> = OnceLock::new();
 
     pub fn play_start_tone() {
-        play_feedback_tone();
+        let path = START_SFX_PATH
+            .get_or_init(|| write_sfx_file("orcavoice-start.wav", START_SFX))
+            .clone();
+        play_file(path);
     }
 
     pub fn play_stop_tone() {
-        play_feedback_tone();
-    }
-
-    fn play_feedback_tone() {
-        let path = FEEDBACK_SFX_PATH
-            .get_or_init(|| write_sfx_file("orcavoice-feedback.wav", FEEDBACK_SFX))
+        let path = STOP_SFX_PATH
+            .get_or_init(|| write_sfx_file("orcavoice-stop.wav", STOP_SFX))
             .clone();
         play_file(path);
     }
