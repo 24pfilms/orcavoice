@@ -13,7 +13,6 @@ pub struct TranscriptionResult {
     pub text: String,
     pub raw_text: String,
     pub enhanced: bool,
-    pub is_command: bool,
     pub latency_ms: u128,
     pub estimated_cost_usd: f64,
     pub audio_duration_ms: u128,
@@ -146,29 +145,6 @@ pub async fn transcribe_with_provider(
     }
 
     let text = parse_transcript_text(&body)?;
-
-    if settings.voice_commands_enabled {
-        if let Some(app_name) = crate::commands::detect_open(&text) {
-            if crate::commands::open_application(&app_name).is_ok() {
-                return Ok(TranscriptionResult {
-                    provider,
-                    model: provider_settings.model.clone(),
-                    text: format!("Opening {app_name}\u{2026}"),
-                    raw_text: text,
-                    enhanced: false,
-                    is_command: true,
-                    latency_ms: started.elapsed().as_millis(),
-                    estimated_cost_usd: estimate_cost(
-                        provider,
-                        audio.summary.duration_ms,
-                        false,
-                    ),
-                    audio_duration_ms: audio.summary.duration_ms,
-                });
-            }
-        }
-    }
-
     let (polished, enhanced) = apply_mode(settings, &text).await;
     Ok(TranscriptionResult {
         provider,
@@ -176,7 +152,6 @@ pub async fn transcribe_with_provider(
         text: polished,
         raw_text: text,
         enhanced,
-        is_command: false,
         latency_ms: started.elapsed().as_millis(),
         estimated_cost_usd: estimate_cost(provider, audio.summary.duration_ms, enhanced),
         audio_duration_ms: audio.summary.duration_ms,

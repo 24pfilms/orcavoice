@@ -57,8 +57,6 @@ pub struct AppSettings {
     pub openai_api_key: String,
     #[serde(default = "default_enhancement_model")]
     pub enhancement_model: String,
-    #[serde(default = "default_true")]
-    pub voice_commands_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -87,7 +85,6 @@ impl Default for AppSettings {
             groq_api_key: String::new(),
             openai_api_key: String::new(),
             enhancement_model: default_enhancement_model(),
-            voice_commands_enabled: true,
         }
     }
 }
@@ -98,10 +95,6 @@ fn default_bubble_outline() -> String {
 
 fn default_enhancement_model() -> String {
     "llama-4-scout-17b-16e-instruct".to_string()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl AppSettings {

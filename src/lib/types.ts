@@ -22,7 +22,6 @@ export interface AppSettings {
   groq_api_key: string;
   openai_api_key: string;
   enhancement_model: string;
-  voice_commands_enabled: boolean;
 }
 
 export interface SecretStatus {
@@ -50,7 +49,6 @@ export interface TranscriptionResult {
   text: string;
   raw_text: string;
   enhanced: boolean;
-  is_command: boolean;
   latency_ms: number;
   estimated_cost_usd: number;
   audio_duration_ms: number;

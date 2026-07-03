@@ -1,5 +1,4 @@
 mod audio;
-mod commands;
 mod error;
 mod history;
 mod hotkey;
@@ -108,7 +107,7 @@ async fn stop_and_transcribe(
     let result = stt::transcribe_active_provider(&settings, &captured)
         .await
         .map_err(String::from)?;
-    let pasted = if settings.auto_paste && !result.is_command {
+    let pasted = if settings.auto_paste {
         output::paste_text(&app, &result.text).map_err(String::from)?;
         true
     } else {

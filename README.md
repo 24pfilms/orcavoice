@@ -4,16 +4,13 @@ A minimal, always-available speech-to-text dictation overlay for Windows, macOS,
 
 Press a key. Speak. Text appears wherever your cursor is.
 
+![OrcaVoice overlay](docs/orcavoice-overlay.png)
+
 ## How it works
 
 OrcaVoice lives hidden in your system tray. Press your trigger key (default: `\`) and a tiny floating bubble appears. Speak naturally. Press the key again and your words are transcribed and pasted into whatever app has focus.
 
-```
-  ┌─────────────────────────────────────────┐
-  │ ⠿  en   ●   R   G   ●   ···   □        │
-  └─────────────────────────────────────────┘
-   drag  lang mic mode prov status settings cancel
-```
+**Toolbar controls:** drag · language · mic · mode · provider · status · settings · cancel
 
 ## Features
 

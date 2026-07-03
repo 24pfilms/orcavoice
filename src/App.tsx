@@ -267,13 +267,7 @@ export default function App() {
           {error ? <div className="mini-error">{error}</div> : null}
           {lastOperation ? (
             <div className="mini-result">
-              {lastOperation.result.is_command ? (
-                <span className="command-badge">Command</span>
-              ) : lastOperation.result.enhanced ? (
-                <span className="enhanced-badge">Enhanced</span>
-              ) : (
-                <span className="raw-badge">Raw</span>
-              )}
+              {lastOperation.result.enhanced ? <span className="enhanced-badge">Enhanced</span> : <span className="raw-badge">Raw</span>}
               {" "}
               {lastOperation.result.text}
             </div>
@@ -343,15 +337,6 @@ export default function App() {
               onChange={() => void toggleAutostart()}
             />
             Launch OrcaVoice on system startup
-          </label>
-
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={settings.voice_commands_enabled}
-              onChange={() => void updateAndPersistSettings({ voice_commands_enabled: !settings.voice_commands_enabled })}
-            />
-            Voice commands ("open [app]")
           </label>
 
           <div className="popover-actions">
