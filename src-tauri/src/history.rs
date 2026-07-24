@@ -56,7 +56,16 @@ pub fn load_history(app: &AppHandle) -> Result<Vec<HistoryEntry>, AppError> {
     }
     let text = fs::read_to_string(&path)
         .map_err(|e| AppError::History(format!("Cannot read history file {}: {e}", path.display())))?;
-    serde_json::from_str(&text).map_err(|e| AppError::History(format!("History file is invalid JSON: {e}")))
+    // Parse leniently: drop individual entries this version cannot deserialize
+    // (e.g. entries written by a newer build using an unknown provider) so a
+    // single incompatible record never breaks dictation.
+    let raw: Vec<serde_json::Value> = serde_json::from_str(&text)
+        .map_err(|e| AppError::History(format!("History file is invalid JSON: {e}")))?;
+    let history = raw
+        .into_iter()
+        .filter_map(|value| serde_json::from_value::<HistoryEntry>(value).ok())
+        .collect();
+    Ok(history)
 }
 
 pub fn append_history(app: &AppHandle, result: TranscriptionResult) -> Result<HistoryEntry, AppError> {
