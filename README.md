@@ -82,7 +82,7 @@ This part was deliberately built around the working Windows behavior:
 - **SFX playback:** `src-tauri/src/feedback.rs`
 - **SFX assets:** `src-tauri/resources/sfx-start.wav` and `src-tauri/resources/sfx-stop.wav`
 - **Current behavior:** start feedback uses the end/done WAV pitched up 15%; stop feedback uses the original end/done WAV
-- **Playback API:** Windows `PlaySoundW` with an embedded WAV copied to the temp directory
+- **Playback API:** Windows `PlaySoundW` (non-blocking `SND_ASYNC`) with an embedded WAV copied to the temp directory, so feedback never adds latency to start/stop
 - **Ducking:** `src-tauri/src/ducking.rs` mutes other process audio sessions after the start SFX plays
 - **Recovery:** app launch, stop, cancel, and error paths call audio recovery so sessions do not stay muted
 

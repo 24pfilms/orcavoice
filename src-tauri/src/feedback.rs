@@ -4,7 +4,7 @@ mod imp {
     use std::os::windows::ffi::OsStrExt;
     use std::path::PathBuf;
     use std::sync::OnceLock;
-    use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_FILENAME, SND_NODEFAULT};
+    use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
 
     const START_SFX: &[u8] = include_bytes!("../resources/sfx-start.wav");
     const STOP_SFX: &[u8] = include_bytes!("../resources/sfx-stop.wav");
@@ -41,10 +41,12 @@ mod imp {
             .chain(std::iter::once(0))
             .collect();
         unsafe {
+            // SND_ASYNC: return immediately instead of blocking until the
+            // tone finishes, so feedback never adds latency to start/stop.
             PlaySoundW(
                 wide_path.as_ptr(),
                 std::ptr::null_mut(),
-                SND_FILENAME | SND_NODEFAULT,
+                SND_FILENAME | SND_NODEFAULT | SND_ASYNC,
             );
         }
     }

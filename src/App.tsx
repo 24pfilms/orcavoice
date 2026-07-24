@@ -108,7 +108,7 @@ export default function App() {
           setError("");
           setStatus("Ready");
           setLastOperation(undefined);
-        }, 900);
+        }, 300);
       } else {
         if (!hasActiveKey) {
           setError(`${providerName} API key is missing.`);
@@ -137,14 +137,24 @@ export default function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     onHotkeyToggle(() => {
       void toggleRecording();
     })
       .then((dispose) => {
-        unlisten = dispose;
+        // If cleanup already ran before this promise resolved, dispose
+        // immediately so the listener can never leak and fire twice.
+        if (disposed) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
       })
       .catch((err: unknown) => setError(formatError(err)));
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [toggleRecording]);
 
   async function toggleSettings() {
