@@ -17,6 +17,7 @@ OrcaVoice is built from scratch. No proprietary Blabby code is copied.
 ## Dependency licenses
 All OrcaVoice dependencies are MIT or Apache-2.0 licensed:
 - `tauri` — MIT/Apache-2.0
+- `tauri-plugin-{autostart, clipboard-manager, global-shortcut, single-instance, store}` — MIT/Apache-2.0
 - `cpal` — Apache-2.0
 - `hound` — Apache-2.0
 - `enigo` — MIT
@@ -24,4 +25,4 @@ All OrcaVoice dependencies are MIT or Apache-2.0 licensed:
 - `reqwest` — MIT/Apache-2.0
 - `serde` / `serde_json` — MIT/Apache-2.0
 - `tokio` — MIT
-- `hound` — Apache-2.0
+- `anyhow` / `thiserror` / `chrono` / `uuid` — MIT/Apache-2.0

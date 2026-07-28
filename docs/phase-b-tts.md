@@ -1,6 +1,11 @@
 # OrcaVoice — Phase B: Highlighted-Text Text-to-Speech
 
-**Status:** PLANNED ONLY. Do not implement until the user explicitly commands it after Phase A is working perfectly.
+**Status:** PLANNED ONLY — no code for this exists. Do not implement until the
+user explicitly commands it.
+
+> **Open decision:** this plan predates the move to a Groq-only stack. OrcaVoice
+> no longer has an OpenAI key or provider, so the TTS provider below must be
+> re-chosen before any implementation starts.
 
 ## Goal
 Add a **Read Selection** button/hotkey that speaks highlighted text from any app.
@@ -18,8 +23,9 @@ User highlights text in any app
 ```
 
 ## TTS provider
-- Default: OpenAI `gpt-4o-mini-tts` with voice `marin` or `cedar`.
-- Fallback: Windows system TTS (free, lower quality).
+Unresolved. The original plan assumed OpenAI `gpt-4o-mini-tts`, which is no longer
+available to the app. Windows system TTS (free, lower quality, no network) is the
+only option that works with the current dependency set.
 
 ## UX
 - Tray menu button: **Read selected text**.
@@ -28,5 +34,5 @@ User highlights text in any app
 
 ## Privacy
 - Highlighted text sent only to the configured TTS provider on user action.
-- UI must label: "Selected text will be sent to OpenAI for speech generation."
+- UI must name the actual provider in the label before any text is sent.
 - Do not store highlighted text by default.
