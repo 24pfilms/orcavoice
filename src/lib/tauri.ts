@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
   AppSettings,
-  BenchmarkOperation,
   HistoryEntry,
   MicrophoneDevice,
   PlatformInfo,
@@ -68,10 +67,6 @@ export function cancelRecording() {
 
 export function stopAndTranscribe() {
   return invoke<TranscriptionOperation>("stop_and_transcribe");
-}
-
-export function stopAndBenchmark() {
-  return invoke<BenchmarkOperation>("stop_and_benchmark");
 }
 
 export function pasteText(text: string) {

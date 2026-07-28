@@ -1,21 +1,21 @@
 use crate::error::AppError;
+use crate::storage;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum SpeechProvider {
+    #[default]
     Groq,
-    OpenAi,
 }
 
 impl SpeechProvider {
     pub fn key_name(self) -> &'static str {
         match self {
             SpeechProvider::Groq => "groq",
-            SpeechProvider::OpenAi => "openai",
         }
     }
 }
@@ -40,9 +40,11 @@ pub enum DictationMode {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppSettings {
+    // Legacy settings files may name a provider OrcaVoice no longer supports;
+    // fall back to Groq rather than failing the whole load.
+    #[serde(default)]
     pub active_provider: SpeechProvider,
     pub groq: ProviderSettings,
-    pub openai: ProviderSettings,
     pub hotkey: String,
     pub mode: DictationMode,
     pub custom_mode_instruction: String,
@@ -55,8 +57,6 @@ pub struct AppSettings {
     pub outline_width: u32,
     #[serde(default)]
     pub groq_api_key: String,
-    #[serde(default)]
-    pub openai_api_key: String,
     #[serde(default = "default_enhancement_model")]
     pub enhancement_model: String,
 }
@@ -71,12 +71,6 @@ impl Default for AppSettings {
                 prompt: String::new(),
                 endpoint: "https://api.groq.com/openai/v1/audio/transcriptions".to_string(),
             },
-            openai: ProviderSettings {
-                model: "gpt-4o-mini-transcribe".to_string(),
-                language: "en".to_string(),
-                prompt: String::new(),
-                endpoint: "https://api.openai.com/v1/audio/transcriptions".to_string(),
-            },
             hotkey: "\\".to_string(),
             mode: DictationMode::Raw,
             custom_mode_instruction: String::new(),
@@ -86,7 +80,6 @@ impl Default for AppSettings {
             bubble_outline: default_bubble_outline(),
             outline_width: default_outline_width(),
             groq_api_key: String::new(),
-            openai_api_key: String::new(),
             enhancement_model: default_enhancement_model(),
         }
     }
@@ -102,15 +95,6 @@ fn default_outline_width() -> u32 {
 
 fn default_enhancement_model() -> String {
     "llama-4-scout-17b-16e-instruct".to_string()
-}
-
-impl AppSettings {
-    pub fn active_provider_settings(&self) -> &ProviderSettings {
-        match self.active_provider {
-            SpeechProvider::Groq => &self.groq,
-            SpeechProvider::OpenAi => &self.openai,
-        }
-    }
 }
 
 pub fn settings_path(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -132,10 +116,27 @@ pub fn load_settings(app: &AppHandle) -> Result<AppSettings, AppError> {
 
     let text = fs::read_to_string(&path)
         .map_err(|e| AppError::Config(format!("Cannot read settings file {}: {e}", path.display())))?;
-    let mut loaded: AppSettings = serde_json::from_str(&text)
-        .map_err(|e| AppError::Config(format!("Settings file is invalid JSON: {e}")))?;
+    let mut loaded: AppSettings = match serde_json::from_str(&text) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            // Same crash signature as history.json: rather than bricking every
+            // launch, set the bad file aside and fall back to defaults.
+            let moved = storage::quarantine(&path);
+            eprintln!(
+                "OrcaVoice: settings file was corrupt ({error}) and has been set aside ({moved:?}). Using defaults."
+            );
+            let defaults = AppSettings::default();
+            save_settings(app, &defaults)?;
+            return Ok(defaults);
+        }
+    };
     if loaded.hotkey == "CommandOrControl+Shift+Space" || loaded.hotkey == "/" {
         loaded.hotkey = "\\".to_string();
+    }
+
+    // Rewrite whenever the file differs from the canonical shape so retired
+    // provider blocks (openai, parakeet) are dropped instead of lingering.
+    if serde_json::to_string_pretty(&loaded)? != text {
         save_settings(app, &loaded)?;
     }
     Ok(loaded)
@@ -144,6 +145,7 @@ pub fn load_settings(app: &AppHandle) -> Result<AppSettings, AppError> {
 pub fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), AppError> {
     let path = settings_path(app)?;
     let text = serde_json::to_string_pretty(settings)?;
-    fs::write(&path, text)
-        .map_err(|e| AppError::Config(format!("Cannot write settings file {}: {e}", path.display())))
+    // Atomic: a crash mid-write would otherwise leave a NUL-filled settings
+    // file and the app would refuse to start with a JSON parse error.
+    storage::write_atomic(&path, &text)
 }

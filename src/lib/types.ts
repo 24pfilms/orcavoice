@@ -1,4 +1,4 @@
-export type SpeechProvider = "groq" | "open-ai";
+export type SpeechProvider = "groq";
 export type DictationMode = "raw" | "grammar" | "email" | "translate-english" | "custom";
 
 export interface ProviderSettings {
@@ -11,7 +11,6 @@ export interface ProviderSettings {
 export interface AppSettings {
   active_provider: SpeechProvider;
   groq: ProviderSettings;
-  openai: ProviderSettings;
   hotkey: string;
   mode: DictationMode;
   custom_mode_instruction: string;
@@ -21,15 +20,12 @@ export interface AppSettings {
   bubble_outline: string;
   outline_width: number;
   groq_api_key: string;
-  openai_api_key: string;
   enhancement_model: string;
 }
 
 export interface SecretStatus {
   groq: boolean;
-  openai: boolean;
   env_groq: boolean;
-  env_openai: boolean;
 }
 
 export interface MicrophoneDevice {
@@ -61,24 +57,11 @@ export interface HistoryEntry extends TranscriptionResult {
 }
 
 export interface TranscriptionOperation {
-  entry: HistoryEntry;
+  /** Absent when the transcript could not be written to history. */
+  entry: HistoryEntry | null;
   result: TranscriptionResult;
   recording: RecordingSummary;
   pasted: boolean;
-}
-
-export interface ProviderBenchmarkResult {
-  ok: boolean;
-  result: TranscriptionResult | null;
-  error: string | null;
-}
-
-export interface BenchmarkOperation {
-  recording: RecordingSummary;
-  benchmark: {
-    groq: ProviderBenchmarkResult;
-    openai: ProviderBenchmarkResult;
-  };
 }
 
 export interface PlatformInfo {

@@ -8,6 +8,7 @@ mod output;
 mod platform;
 mod secrets;
 mod settings;
+mod storage;
 mod stt;
 mod tray;
 
@@ -16,23 +17,19 @@ use history::HistoryEntry;
 use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SpeechProvider};
 use std::sync::atomic::{AtomicBool, Ordering};
-use stt::{BenchmarkResult, TranscriptionResult};
+use stt::TranscriptionResult;
 use tauri::{utils::config::Color, AppHandle, LogicalSize, Manager, PhysicalPosition, Position, Size, State};
 
 static HAS_POSITIONED_OVERLAY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TranscriptionOperation {
-    pub entry: HistoryEntry,
+    /// `None` when the transcript could not be written to history. Recording
+    /// history is a convenience, never a reason to fail a dictation.
+    pub entry: Option<HistoryEntry>,
     pub result: TranscriptionResult,
     pub recording: RecordingSummary,
     pub pasted: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BenchmarkOperation {
-    pub recording: RecordingSummary,
-    pub benchmark: BenchmarkResult,
 }
 
 #[tauri::command]
@@ -50,7 +47,7 @@ fn save_settings(app: AppHandle, new_settings: AppSettings) -> Result<AppSetting
 #[tauri::command]
 fn get_secret_status(app: AppHandle) -> secrets::SecretStatus {
     let settings = settings::load_settings(&app).unwrap_or_default();
-    secrets::secret_status_with_fallback(&settings.groq_api_key, &settings.openai_api_key)
+    secrets::secret_status_with_fallback(&settings.groq_api_key)
 }
 
 #[tauri::command]
@@ -61,10 +58,9 @@ fn set_api_key(app: AppHandle, provider: SpeechProvider, api_key: String) -> Res
     let mut current = settings::load_settings(&app).unwrap_or_default();
     match provider {
         settings::SpeechProvider::Groq => current.groq_api_key = api_key,
-        settings::SpeechProvider::OpenAi => current.openai_api_key = api_key,
     }
     settings::save_settings(&app, &current).map_err(String::from)?;
-    Ok(secrets::secret_status_with_fallback(&current.groq_api_key, &current.openai_api_key))
+    Ok(secrets::secret_status_with_fallback(&current.groq_api_key))
 }
 
 #[tauri::command]
@@ -73,10 +69,9 @@ fn clear_api_key(app: AppHandle, provider: SpeechProvider) -> Result<secrets::Se
     let mut current = settings::load_settings(&app).unwrap_or_default();
     match provider {
         settings::SpeechProvider::Groq => current.groq_api_key = String::new(),
-        settings::SpeechProvider::OpenAi => current.openai_api_key = String::new(),
     }
     settings::save_settings(&app, &current).map_err(String::from)?;
-    Ok(secrets::secret_status_with_fallback(&current.groq_api_key, &current.openai_api_key))
+    Ok(secrets::secret_status_with_fallback(&current.groq_api_key))
 }
 
 #[tauri::command]
@@ -138,26 +133,20 @@ async fn stop_and_transcribe(
     } else {
         false
     };
-    let entry = history::append_history(&app, result.clone()).map_err(String::from)?;
+    // Best-effort: the user already has their text. A history failure must not
+    // turn a successful dictation into a red error state on screen.
+    let entry = match history::append_history(&app, result.clone()) {
+        Ok(entry) => Some(entry),
+        Err(error) => {
+            eprintln!("OrcaVoice could not append to history: {error}");
+            None
+        }
+    };
     Ok(TranscriptionOperation {
         entry,
         result,
         recording: captured.summary,
         pasted,
-    })
-}
-
-#[tauri::command]
-async fn stop_and_benchmark(
-    app: AppHandle,
-    recorder: State<'_, RecorderState>,
-) -> Result<BenchmarkOperation, String> {
-    let captured = audio::stop_recording(&recorder).map_err(String::from)?;
-    let settings = settings::load_settings(&app).map_err(String::from)?;
-    let benchmark = stt::benchmark_providers(&settings, &captured).await;
-    Ok(BenchmarkOperation {
-        recording: captured.summary,
-        benchmark,
     })
 }
 
@@ -249,6 +238,14 @@ fn position_near_taskbar(window: &tauri::WebviewWindow, width: f64, height: f64)
 
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: a second launch (autostart + manual start)
+        // would otherwise fail to claim the global hotkey and leave a dead,
+        // invisible process behind. Instead we surface the running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Err(error) = show_compact_overlay(app.clone()) {
+                eprintln!("OrcaVoice could not surface the running instance: {error}");
+            }
+        }))
         .manage(RecorderState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -292,7 +289,6 @@ pub fn run() {
             start_recording,
             cancel_recording,
             stop_and_transcribe,
-            stop_and_benchmark,
             paste_text,
             get_history,
             clear_history,

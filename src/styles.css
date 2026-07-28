@@ -189,6 +189,20 @@ button:disabled {
   transform: scale(0.9);
 }
 
+/* Groq is the only provider, so its badge is an indicator, not a control. */
+.provider-circle.is-static {
+  cursor: default;
+}
+
+.provider-circle.is-static:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.provider-circle.is-static:active {
+  transform: none;
+}
+
 /* Status dot */
 .status-dot {
   width: 9px;
@@ -224,6 +238,35 @@ button:disabled {
   opacity: 1;
   box-shadow: 0 0 10px rgba(248, 184, 78, 0.5);
   animation: spin 800ms linear infinite;
+}
+
+/* Without this the bubble fell back to the neutral grey border while
+   transcribing, which read as the overlay going inactive mid-dictation. */
+.toolbar-bar.is-busy .pill-group {
+  border-color: rgba(248, 184, 78, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px rgba(248, 184, 78, 0.16);
+}
+
+.toolbar-bar.is-busy .record-btn {
+  color: var(--warn);
+  border-color: rgba(248, 184, 78, 0.35);
+}
+
+/* === State: done (pasted, about to hide) === */
+.toolbar-bar.is-done .status-dot {
+  background: var(--good);
+  opacity: 1;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--good) 55%, transparent);
+}
+
+.toolbar-bar.is-done .pill-group {
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px color-mix(in srgb, var(--good) 16%, transparent);
+}
+
+.toolbar-bar.is-done .record-btn {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
 }
 
 /* === State: error === */
