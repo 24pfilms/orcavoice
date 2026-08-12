@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   cancelRecording,
   clearApiKey,
   disableAutostart,
   duckAudio,
   enableAutostart,
+  getInputLevel,
   getSecretStatus,
   getSettings,
   hideOverlay,
   isAutostartEnabled,
   isRecording,
+  listMicrophones,
   onHotkeyToggle,
+  openMicrophoneSettings,
   playFeedbackTone,
   restoreAudio,
   saveSettings,
@@ -22,15 +25,32 @@ import {
   stopAndTranscribe,
   unduckAudio,
 } from "./lib/tauri";
-import type { AppSettings, DictationMode, SecretStatus, SpeechProvider, TranscriptionOperation } from "./lib/types";
+import type {
+  AppSettings,
+  DictationMode,
+  MicrophoneDevice,
+  SecretStatus,
+  SpeechProvider,
+  TranscriptionOperation,
+} from "./lib/types";
 import "./styles.css";
 
 const emptySecrets: SecretStatus = {
   groq: false,
-  openai: false,
   env_groq: false,
-  env_openai: false,
 };
+
+const PROVIDER: SpeechProvider = "groq";
+const PROVIDER_NAME = "Groq";
+
+// The overlay lingers just long enough to read the outcome, then always hides.
+export const HIDE_AFTER_SUCCESS_MS = 300;
+export const HIDE_AFTER_ERROR_MS = 2600;
+
+// Mic check: poll fast enough to look live, and stop on its own so a forgotten
+// test never holds the capture device open.
+const MIC_TEST_POLL_MS = 120;
+export const MIC_TEST_MAX_MS = 15_000;
 
 const modeLabels: Record<DictationMode, string> = {
   raw: "Raw",
@@ -43,7 +63,7 @@ const modeLabels: Record<DictationMode, string> = {
 export default function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [secrets, setSecrets] = useState<SecretStatus>(emptySecrets);
-  const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<SpeechProvider, string>>({ groq: "", "open-ai": "" });
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -51,11 +71,23 @@ export default function App() {
   const [error, setError] = useState("");
   const [lastOperation, setLastOperation] = useState<TranscriptionOperation | undefined>();
   const [autostartOn, setAutostartOn] = useState(false);
+  const [lastError, setLastError] = useState("");
+  const [microphones, setMicrophones] = useState<MicrophoneDevice[]>([]);
+  const [micTest, setMicTest] = useState({ active: false, peak: 0, device: "" });
+  const hideTimer = useRef<number | undefined>(undefined);
+  const micTestTimer = useRef<number | undefined>(undefined);
+  // Mirrors `micTest.active` for callbacks that must not close over stale state.
+  const micTestActive = useRef(false);
+  const toggleInFlight = useRef(false);
 
-  const activeProvider = settings?.active_provider ?? "groq";
-  const activeProviderSettings = activeProvider === "groq" ? settings?.groq : settings?.openai;
-  const providerName = activeProvider === "groq" ? "Groq" : "OpenAI";
-  const hasActiveKey = activeProvider === "groq" ? secrets.groq || secrets.env_groq : secrets.openai || secrets.env_openai;
+  const activeProviderSettings = settings?.groq;
+  const hasActiveKey = secrets.groq || secrets.env_groq;
+  const defaultMicrophoneName = microphones.find((microphone) => microphone.is_default)?.name ?? "";
+
+  // Between "transcription landed" and "overlay hidden" the bar used to carry no
+  // state class at all, so it dropped back to the neutral grey styling for a
+  // beat before disappearing. Hold an explicit success state instead.
+  const done = Boolean(lastOperation) && !error && !busy && !recording;
 
   const compactStatus = useMemo(() => {
     if (error) return "Error";
@@ -83,14 +115,74 @@ export default function App() {
     refresh().catch((err: unknown) => setError(formatError(err)));
   }, [refresh]);
 
+  const cancelPendingHide = useCallback(() => {
+    if (hideTimer.current === undefined) return;
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = undefined;
+  }, []);
+
+  // Every terminal state — success *and* failure — has to put the overlay away.
+  // Without a hide on the error path the bubble stays pinned on screen and the
+  // trigger key looks like a switch that only ever turns on.
+  const scheduleHide = useCallback(
+    (delayMs: number) => {
+      cancelPendingHide();
+      hideTimer.current = window.setTimeout(() => {
+        hideTimer.current = undefined;
+        setError("");
+        setStatus("Ready");
+        setLastOperation(undefined);
+        void hideOverlay();
+      }, delayMs);
+    },
+    [cancelPendingHide],
+  );
+
+  useEffect(() => cancelPendingHide, [cancelPendingHide]);
+
+  // A mic check holds the capture device open, so it must never outlive the
+  // panel it lives in - nor collide with a real dictation.
+  const stopMicTest = useCallback(async () => {
+    if (micTestTimer.current !== undefined) {
+      window.clearInterval(micTestTimer.current);
+      micTestTimer.current = undefined;
+    }
+    if (!micTestActive.current) return;
+    micTestActive.current = false;
+    setMicTest({ active: false, peak: 0, device: "" });
+    try {
+      await cancelRecording();
+    } catch (err) {
+      console.error("OrcaVoice mic check teardown failed:", formatError(err));
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (micTestTimer.current !== undefined) window.clearInterval(micTestTimer.current);
+    },
+    [],
+  );
+
   const toggleRecording = useCallback(async () => {
     if (!settings) return;
-    setError("");
-    setLastOperation(undefined);
-    setSettingsOpen(false);
-    await showCompactOverlay();
+    // The global hotkey repeats while the key is held and the record button is
+    // clickable mid-flight; without this guard a stop turns straight back into
+    // a start and the overlay never settles.
+    if (toggleInFlight.current) return;
+    toggleInFlight.current = true;
 
     try {
+      cancelPendingHide();
+      await stopMicTest();
+      setError("");
+      setLastOperation(undefined);
+      setSettingsOpen(false);
+      // Must stay inside the try: if this IPC call rejects while the in-flight
+      // latch is set, the latch never clears and every later press is dropped,
+      // leaving the overlay stranded on screen forever.
+      await showCompactOverlay();
+
       const backendRecording = await isRecording();
       if (backendRecording) {
         await unduckAudio();
@@ -101,17 +193,13 @@ export default function App() {
         setStatus("Creating text");
         const operation = await stopAndTranscribe();
         setError("");
+        setLastError("");
         setLastOperation(operation);
         setStatus(operation.pasted ? "Pasted" : "Copied");
-        window.setTimeout(() => {
-          void hideOverlay();
-          setError("");
-          setStatus("Ready");
-          setLastOperation(undefined);
-        }, 300);
+        scheduleHide(HIDE_AFTER_SUCCESS_MS);
       } else {
         if (!hasActiveKey) {
-          setError(`${providerName} API key is missing.`);
+          setError(`${PROVIDER_NAME} API key is missing.`);
           setSettingsOpen(true);
           await showSettingsOverlay();
           return;
@@ -124,16 +212,26 @@ export default function App() {
         setStatus("Listening");
       }
     } catch (err) {
-      setError(formatError(err));
+      const message = formatError(err);
+      console.error("OrcaVoice dictation failed:", message);
+      setError(message);
+      setLastError(message);
       setStatus("Error");
-      await showCompactOverlay();
-      await cancelRecording();
-      await unduckAudio();
       setRecording(false);
+      // Arm the hide before any further IPC. Recovery calls can reject too, and
+      // if that skipped the scheduling the overlay would be stranded again.
+      scheduleHide(HIDE_AFTER_ERROR_MS);
+      try {
+        await cancelRecording();
+        await unduckAudio();
+      } catch (recoveryError) {
+        console.error("OrcaVoice recovery failed:", formatError(recoveryError));
+      }
     } finally {
       setBusy(false);
+      toggleInFlight.current = false;
     }
-  }, [hasActiveKey, providerName, settings]);
+  }, [cancelPendingHide, hasActiveKey, scheduleHide, settings, stopMicTest]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -158,14 +256,63 @@ export default function App() {
   }, [toggleRecording]);
 
   async function toggleSettings() {
+    // A pending auto-hide must not yank the settings window away mid-edit.
+    cancelPendingHide();
     const next = !settingsOpen;
     setSettingsOpen(next);
     setError("");
     if (next) {
+      listMicrophones()
+        .then(setMicrophones)
+        .catch((err: unknown) => console.error("OrcaVoice cannot list microphones:", formatError(err)));
       await showSettingsOverlay();
     } else {
+      await stopMicTest();
       await showCompactOverlay();
     }
+  }
+
+  /** A live test holds the old device open, so restart it on the new one. */
+  async function switchMicrophone(name: string) {
+    const wasTesting = micTestActive.current;
+    await stopMicTest();
+    await persistWithoutClosing({ input_device: name });
+    if (wasTesting) await startMicTest();
+  }
+
+  /** Proves whether audio actually reaches OrcaVoice, before a real dictation. */
+  async function startMicTest() {
+    if (recording || busy || micTestActive.current) return;
+    setError("");
+    try {
+      await startRecording();
+    } catch (err) {
+      setError(formatError(err));
+      return;
+    }
+    micTestActive.current = true;
+    setMicTest({ active: true, peak: 0, device: "" });
+    const startedAt = Date.now();
+    micTestTimer.current = window.setInterval(() => {
+      if (Date.now() - startedAt > MIC_TEST_MAX_MS) {
+        void stopMicTest();
+        return;
+      }
+      getInputLevel()
+        .then((level) => {
+          if (!micTestActive.current) return;
+          setMicTest((previous) => ({
+            active: true,
+            device: level.device || previous.device,
+            // Decay the previous peak so the bar falls back smoothly instead of
+            // flickering between polls.
+            peak: Math.max(level.peak, previous.peak * 0.55),
+          }));
+        })
+        .catch(() => {
+          /* a poll that loses the race with teardown is not an error */
+        });
+    }, MIC_TEST_POLL_MS);
   }
 
   async function persistSettings(nextSettings = settings) {
@@ -176,28 +323,46 @@ export default function App() {
       setSettings(saved);
       setStatus("Saved");
       setSettingsOpen(false);
+      // Collapsing leaves no UI to stop the meter, so release the mic with it.
+      await stopMicTest();
       await showCompactOverlay();
     } catch (err) {
       setError(formatError(err));
     }
   }
 
-  async function saveProviderKey(provider: SpeechProvider) {
+  /**
+   * Save immediately but keep the panel open, for choices the user makes *while*
+   * configuring - picking a microphone then testing it must not collapse the UI.
+   */
+  async function persistWithoutClosing(patch: Partial<AppSettings>) {
+    if (!settings) return;
+    const nextSettings = { ...settings, ...patch };
+    setSettings(nextSettings);
     setError("");
     try {
-      const savedSecrets = await setApiKey(provider, apiKeyDrafts[provider]);
+      setSettings(await saveSettings(nextSettings));
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
+  async function saveProviderKey() {
+    setError("");
+    try {
+      const savedSecrets = await setApiKey(PROVIDER, apiKeyDraft);
       setSecrets(savedSecrets);
-      setApiKeyDrafts((current) => ({ ...current, [provider]: "" }));
+      setApiKeyDraft("");
       setStatus("Key saved");
     } catch (err) {
       setError(formatError(err));
     }
   }
 
-  async function removeProviderKey(provider: SpeechProvider) {
+  async function removeProviderKey() {
     setError("");
     try {
-      const savedSecrets = await clearApiKey(provider);
+      const savedSecrets = await clearApiKey(PROVIDER);
       setSecrets(savedSecrets);
       setStatus("Key cleared");
     } catch (err) {
@@ -206,29 +371,36 @@ export default function App() {
   }
 
   async function cancelAndHide() {
+    cancelPendingHide();
+    await stopMicTest();
     await cancelRecording();
     await unduckAudio();
     setRecording(false);
     setBusy(false);
     setError("");
     setStatus("Ready");
+    setLastError("");
     setLastOperation(undefined);
     setSettingsOpen(false);
     await hideOverlay();
   }
 
   async function toggleAutostart() {
+    const next = !autostartOn;
     try {
-      if (autostartOn) {
-        await disableAutostart();
-        setAutostartOn(false);
-      } else {
+      if (next) {
         await enableAutostart();
-        setAutostartOn(true);
+      } else {
+        await disableAutostart();
       }
-    } catch {
-      // best-effort
+      setAutostartOn(next);
+    } catch (err) {
+      setError(formatError(err));
+      return;
     }
+    // Persist the choice too: startup re-asserts the OS entry from this flag,
+    // so without it an opt-out would be undone on the next launch.
+    await persistWithoutClosing({ start_on_login: next });
   }
 
   function updateSettings(patch: Partial<AppSettings>) {
@@ -238,12 +410,7 @@ export default function App() {
 
   function updateProviderSettings(field: "language" | "prompt", value: string) {
     if (!settings) return;
-    const key = settings.active_provider === "groq" ? "groq" : "openai";
-    const updated = {
-      ...settings,
-      [key]: { ...settings[key], [field]: value },
-    };
-    setSettings(updated);
+    setSettings({ ...settings, groq: { ...settings.groq, [field]: value } });
   }
 
   async function updateAndPersistSettings(patch: Partial<AppSettings>) {
@@ -262,7 +429,7 @@ export default function App() {
       className={`overlay-root ${settingsOpen ? "expanded" : "compact"}`}
       style={{ "--border": settings.bubble_outline, "--outline-width": `${settings.outline_width}px` } as CSSProperties}
     >
-      <section className={`toolbar-bar ${recording ? "is-recording" : ""} ${busy ? "is-busy" : ""} ${error ? "is-error" : ""}`}>
+      <section className={`toolbar-bar ${recording ? "is-recording" : ""} ${busy ? "is-busy" : ""} ${done ? "is-done" : ""} ${error ? "is-error" : ""}`}>
         {/* Pill 1: Drag + Language */}
         <div className="pill-group">
           <button className="icon-btn grab-handle" title="Drag OrcaVoice" onPointerDown={() => void startOverlayDrag()}>
@@ -296,10 +463,8 @@ export default function App() {
           <button className="mode-circle" title={`Mode: ${modeLabels[settings.mode]}`} onClick={() => void updateAndPersistSettings({ mode: nextMode(settings.mode) })}>
             {modeInitial(settings.mode)}
           </button>
-          <button className="provider-circle" title={`Provider: ${providerName}`} onClick={() => void updateAndPersistSettings({ active_provider: activeProvider === "groq" ? "open-ai" : "groq" })}>
-            {activeProvider === "groq" ? "G" : "O"}
-          </button>
-          <span className="status-dot" title={compactStatus} />
+          <span className="provider-circle is-static" title={`Provider: ${PROVIDER_NAME}`}>G</span>
+          <span className="status-dot" title={error || compactStatus} />
         </div>
 
         {/* Pill 3: Settings + Cancel */}
@@ -329,7 +494,16 @@ export default function App() {
             </div>
           </div>
 
-          {error ? <div className="mini-error">{error}</div> : null}
+          {error || lastError ? (
+            <div className="mini-error">
+              {error || lastError}
+              {isSilenceError(error || lastError) ? (
+                <button className="link-button" onClick={() => void openMicrophoneSettings()}>
+                  Open Windows microphone settings
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {lastOperation ? (
             <div className="mini-result">
               {lastOperation.result.enhanced ? <span className="enhanced-badge">Enhanced</span> : <span className="raw-badge">Raw</span>}
@@ -337,6 +511,42 @@ export default function App() {
               {lastOperation.result.text}
             </div>
           ) : null}
+
+          <label>
+            Microphone
+            <select
+              value={settings.input_device}
+              onChange={(event) => void switchMicrophone(event.target.value)}
+            >
+              <option value="">
+                System default{defaultMicrophoneName ? ` (${defaultMicrophoneName})` : ""}
+              </option>
+              {microphones.map((microphone) => (
+                <option key={microphone.name} value={microphone.name}>
+                  {microphone.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="mic-check">
+            <button className="mic-check-button" disabled={recording || busy} onClick={() => void (micTest.active ? stopMicTest() : startMicTest())}>
+              {micTest.active ? "Stop test" : "Test microphone"}
+            </button>
+            <div
+              className="level-meter"
+              role="meter"
+              aria-label="Microphone level"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(micTest.peak * 100)}
+            >
+              <span className="level-fill" style={{ width: `${Math.min(100, Math.round(micTest.peak * 140))}%` }} />
+            </div>
+            <span className="level-hint">
+              {micTest.active ? (micTest.peak > 0.02 ? "Hearing you" : "No signal — speak up") : "Speak to check input"}
+            </span>
+          </div>
 
           <label>
             Mode
@@ -349,8 +559,7 @@ export default function App() {
             </select>
           </label>
 
-          <div className="two-mini-fields">
-            <label>
+          <label>
               Language
               <select
                 value={activeProviderSettings?.language || "en"}
@@ -374,18 +583,7 @@ export default function App() {
                 <option value="pl">Polish</option>
                 <option value="uk">Ukrainian</option>
               </select>
-            </label>
-            <label>
-              Provider
-              <select
-                value={settings.active_provider}
-                onChange={(event) => updateSettings({ active_provider: event.target.value as SpeechProvider })}
-              >
-                <option value="groq">Groq — fast</option>
-                <option value="open-ai">OpenAI — quality</option>
-              </select>
-            </label>
-          </div>
+          </label>
 
           <label>
             Custom vocabulary
@@ -432,15 +630,15 @@ export default function App() {
           </label>
 
           <label>
-            {providerName} API key
+            {PROVIDER_NAME} API key
             <div className="key-row">
               <input
                 type="password"
-                placeholder={hasActiveKey ? "••••••••••••••••" : activeProvider === "groq" ? "gsk_..." : "sk-..."}
-                value={apiKeyDrafts[activeProvider]}
-                onChange={(event) => setApiKeyDrafts((current) => ({ ...current, [activeProvider]: event.target.value }))}
+                placeholder={hasActiveKey ? "••••••••••••••••" : "gsk_..."}
+                value={apiKeyDraft}
+                onChange={(event) => setApiKeyDraft(event.target.value)}
               />
-              <button onClick={() => void saveProviderKey(activeProvider)}>Save</button>
+              <button onClick={() => void saveProviderKey()}>Save</button>
             </div>
           </label>
 
@@ -455,7 +653,7 @@ export default function App() {
 
           <div className="popover-actions">
             <span className={hasActiveKey ? "key-ok" : "key-missing"}>{hasActiveKey ? "Key saved" : "Key missing"}</span>
-            <button onClick={() => void removeProviderKey(activeProvider)}>Clear key</button>
+            <button onClick={() => void removeProviderKey()}>Clear key</button>
             <button className="primary-mini" onClick={() => void persistSettings()}>Save settings</button>
           </div>
         </section>
@@ -476,4 +674,9 @@ function modeInitial(mode: DictationMode) {
 function formatError(err: unknown) {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** Only dead-air failures are fixable from the Windows privacy page. */
+function isSilenceError(message: string) {
+  return /silent|no audio/i.test(message);
 }

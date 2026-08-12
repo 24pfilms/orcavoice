@@ -1,4 +1,4 @@
-export type SpeechProvider = "groq" | "open-ai";
+export type SpeechProvider = "groq";
 export type DictationMode = "raw" | "grammar" | "email" | "translate-english" | "custom";
 
 export interface ProviderSettings {
@@ -11,7 +11,6 @@ export interface ProviderSettings {
 export interface AppSettings {
   active_provider: SpeechProvider;
   groq: ProviderSettings;
-  openai: ProviderSettings;
   hotkey: string;
   mode: DictationMode;
   custom_mode_instruction: string;
@@ -21,15 +20,16 @@ export interface AppSettings {
   bubble_outline: string;
   outline_width: number;
   groq_api_key: string;
-  openai_api_key: string;
   enhancement_model: string;
+  /** Empty means "system default input". */
+  input_device: string;
+  /** Re-asserted against the OS login entry on every launch. */
+  start_on_login: boolean;
 }
 
 export interface SecretStatus {
   groq: boolean;
-  openai: boolean;
   env_groq: boolean;
-  env_openai: boolean;
 }
 
 export interface MicrophoneDevice {
@@ -42,6 +42,19 @@ export interface RecordingSummary {
   sample_rate: number;
   samples: number;
   rms: number;
+  /** Loudest sample, 0-1 of full scale. */
+  peak: number;
+  device: string;
+}
+
+/** Live capture telemetry behind the microphone meter. */
+export interface InputLevel {
+  recording: boolean;
+  /** Peak since the previous poll, 0-1 of full scale. */
+  peak: number;
+  device: string;
+  samples: number;
+  elapsed_ms: number;
 }
 
 export interface TranscriptionResult {
@@ -61,24 +74,11 @@ export interface HistoryEntry extends TranscriptionResult {
 }
 
 export interface TranscriptionOperation {
-  entry: HistoryEntry;
+  /** Absent when the transcript could not be written to history. */
+  entry: HistoryEntry | null;
   result: TranscriptionResult;
   recording: RecordingSummary;
   pasted: boolean;
-}
-
-export interface ProviderBenchmarkResult {
-  ok: boolean;
-  result: TranscriptionResult | null;
-  error: string | null;
-}
-
-export interface BenchmarkOperation {
-  recording: RecordingSummary;
-  benchmark: {
-    groq: ProviderBenchmarkResult;
-    openai: ProviderBenchmarkResult;
-  };
 }
 
 export interface PlatformInfo {

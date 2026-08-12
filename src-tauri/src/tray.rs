@@ -11,7 +11,15 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), AppError> {
     let menu = Menu::with_items(app, &[&show, &quit])
         .map_err(|e| AppError::Config(format!("Cannot build tray menu: {e}")))?;
 
+    // Without an explicit icon the tray entry renders blank on Windows, which
+    // makes an autostarted (hidden-window) OrcaVoice look like it never launched.
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| AppError::Config("No default window icon available for tray.".to_string()))?;
+
     TrayIconBuilder::new()
+        .icon(icon)
         .tooltip("OrcaVoice")
         .menu(&menu)
         .show_menu_on_left_click(false)

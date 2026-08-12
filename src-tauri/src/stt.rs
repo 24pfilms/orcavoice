@@ -18,19 +18,6 @@ pub struct TranscriptionResult {
     pub audio_duration_ms: u128,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderBenchmarkResult {
-    pub ok: bool,
-    pub result: Option<TranscriptionResult>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BenchmarkResult {
-    pub groq: ProviderBenchmarkResult,
-    pub openai: ProviderBenchmarkResult,
-}
-
 #[derive(Debug, Deserialize)]
 struct ProviderJsonResponse {
     text: Option<String>,
@@ -58,50 +45,9 @@ pub async fn transcribe_active_provider(
     settings: &AppSettings,
     audio: &CapturedAudio,
 ) -> Result<TranscriptionResult, AppError> {
-    transcribe_with_provider(settings.active_provider, settings, audio).await
-}
-
-pub async fn benchmark_providers(
-    settings: &AppSettings,
-    audio: &CapturedAudio,
-) -> BenchmarkResult {
-    let groq = to_benchmark_result(
-        transcribe_with_provider(SpeechProvider::Groq, settings, audio).await,
-    );
-    let openai = to_benchmark_result(
-        transcribe_with_provider(SpeechProvider::OpenAi, settings, audio).await,
-    );
-    BenchmarkResult { groq, openai }
-}
-
-fn to_benchmark_result(result: Result<TranscriptionResult, AppError>) -> ProviderBenchmarkResult {
-    match result {
-        Ok(result) => ProviderBenchmarkResult {
-            ok: true,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => ProviderBenchmarkResult {
-            ok: false,
-            result: None,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
-pub async fn transcribe_with_provider(
-    provider: SpeechProvider,
-    settings: &AppSettings,
-    audio: &CapturedAudio,
-) -> Result<TranscriptionResult, AppError> {
-    let provider_settings = match provider {
-        SpeechProvider::Groq => &settings.groq,
-        SpeechProvider::OpenAi => &settings.openai,
-    };
-    let file_key = match provider {
-        SpeechProvider::Groq => &settings.groq_api_key,
-        SpeechProvider::OpenAi => &settings.openai_api_key,
-    };
+    let provider = SpeechProvider::Groq;
+    let provider_settings = &settings.groq;
+    let file_key = &settings.groq_api_key;
     let api_key = secrets::get_api_key_with_fallback(provider, file_key)?;
     let started = Instant::now();
 
@@ -181,7 +127,6 @@ fn estimate_cost(provider: SpeechProvider, duration_ms: u128, enhanced: bool) ->
     let minutes = (duration_ms as f64 / 60_000.0).max(10.0 / 60.0);
     let stt_cost = match provider {
         SpeechProvider::Groq => minutes / 60.0 * 0.04,
-        SpeechProvider::OpenAi => minutes * 0.003,
     };
     if enhanced {
         // Llama 4 Scout on Groq: ~80 input tokens + ~30 output tokens per dictation
@@ -195,7 +140,6 @@ fn estimate_cost(provider: SpeechProvider, duration_ms: u128, enhanced: bool) ->
 fn provider_label(provider: SpeechProvider) -> &'static str {
     match provider {
         SpeechProvider::Groq => "Groq",
-        SpeechProvider::OpenAi => "OpenAI",
     }
 }
 

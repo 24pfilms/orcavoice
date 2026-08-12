@@ -3,8 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
   AppSettings,
-  BenchmarkOperation,
   HistoryEntry,
+  InputLevel,
   MicrophoneDevice,
   PlatformInfo,
   SecretStatus,
@@ -38,6 +38,15 @@ export function listMicrophones() {
   return invoke<MicrophoneDevice[]>("list_microphones");
 }
 
+export function getInputLevel() {
+  return invoke<InputLevel>("get_input_level");
+}
+
+/** Windows only: opens Settings > Privacy & security > Microphone. */
+export function openMicrophoneSettings() {
+  return invoke<void>("open_microphone_settings");
+}
+
 export function isRecording() {
   return invoke<boolean>("is_recording");
 }
@@ -68,10 +77,6 @@ export function cancelRecording() {
 
 export function stopAndTranscribe() {
   return invoke<TranscriptionOperation>("stop_and_transcribe");
-}
-
-export function stopAndBenchmark() {
-  return invoke<BenchmarkOperation>("stop_and_benchmark");
 }
 
 export function pasteText(text: string) {
