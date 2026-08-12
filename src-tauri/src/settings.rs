@@ -59,6 +59,20 @@ pub struct AppSettings {
     pub groq_api_key: String,
     #[serde(default = "default_enhancement_model")]
     pub enhancement_model: String,
+    /// Empty means "whatever Windows reports as the default input". Stored by
+    /// name because cpal device ids are not stable across reboots.
+    #[serde(default)]
+    pub input_device: String,
+    /// On by default: dictation is only useful if it is already running when
+    /// you reach for the trigger key. Each launch re-asserts the OS entry, so
+    /// an installer or profile reset cannot silently drop it - but an explicit
+    /// opt-out is stored here and honoured.
+    #[serde(default = "default_true")]
+    pub start_on_login: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -81,6 +95,8 @@ impl Default for AppSettings {
             outline_width: default_outline_width(),
             groq_api_key: String::new(),
             enhancement_model: default_enhancement_model(),
+            input_device: String::new(),
+            start_on_login: true,
         }
     }
 }

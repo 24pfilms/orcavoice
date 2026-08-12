@@ -21,6 +21,10 @@ export interface AppSettings {
   outline_width: number;
   groq_api_key: string;
   enhancement_model: string;
+  /** Empty means "system default input". */
+  input_device: string;
+  /** Re-asserted against the OS login entry on every launch. */
+  start_on_login: boolean;
 }
 
 export interface SecretStatus {
@@ -38,6 +42,19 @@ export interface RecordingSummary {
   sample_rate: number;
   samples: number;
   rms: number;
+  /** Loudest sample, 0-1 of full scale. */
+  peak: number;
+  device: string;
+}
+
+/** Live capture telemetry behind the microphone meter. */
+export interface InputLevel {
+  recording: boolean;
+  /** Peak since the previous poll, 0-1 of full scale. */
+  peak: number;
+  device: string;
+  samples: number;
+  elapsed_ms: number;
 }
 
 export interface TranscriptionResult {

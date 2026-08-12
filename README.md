@@ -4,7 +4,7 @@ A minimal, always-available speech-to-text dictation overlay for Windows, macOS,
 
 Press a key. Speak. Text appears wherever your cursor is.
 
-**Version 0.2.2** · Last updated 28 July 2026
+**Version 0.2.3** · Last updated 12 August 2026
 
 ![OrcaVoice overlay](docs/orcavoice-overlay.png)
 
@@ -24,7 +24,8 @@ OrcaVoice lives hidden in your system tray. Press your trigger key (default: `\`
 - **Visual feedback** — pulsing status dot and border glow during recording
 - **Movable** — drag the bubble anywhere with the grab handle
 - **Customizable outline** — pick your own bubble accent color
-- **Auto-start on boot** — optional Windows/macOS/Linux startup
+- **Microphone picker + live level meter** — choose your input and prove it works before dictating
+- **Auto-start on boot** — on by default, re-asserted at every launch so an upgrade cannot silently drop it
 - **Single instance** — a second launch surfaces the running app instead of fighting it for the hotkey
 - **API keys stored securely** — OS keyring + settings.json fallback
 - **Five dictation modes** — Raw, Grammar, Email, Translate, Custom (all polished by Groq's LLM)
@@ -130,6 +131,8 @@ Avoid replacing this with WebAudio or `Beep()`:
 ### Settings popover
 
 Click `···` on the bubble to access:
+- **Microphone** — pick an input device, or follow the Windows default
+- **Test microphone** — a live level meter that proves audio is reaching OrcaVoice (auto-stops after 15s)
 - **Mode** — Raw, Grammar correction, Email formatting, Translate to English, Custom
 - **Language** — transcription language, or auto-detect
 - **Custom vocabulary** — bias the transcript toward names and jargon you use
@@ -189,6 +192,34 @@ Three separate defects produced this symptom:
 `src/App.test.tsx` and `src-tauri/src/hotkey.rs` tests fail if any of these
 regress.
 
+### "Recording looks silent" when you know you were speaking
+
+Until 0.2.3 this was usually a **false alarm**: the silence check compared the
+recording's *average* level (RMS) against a threshold of 80. Normal speech
+contains pauses, so a perfectly good dictation averages well below that and was
+rejected locally — it never reached Groq.
+
+The check is now based on **peak amplitude** (~-54 dBFS, below a typical mic's
+noise floor), so quiet-but-real audio is accepted and only true dead air is
+refused. The error now also names the device and the measured level.
+
+If it still reports silence, audio genuinely is not arriving:
+
+1. Open Settings → **Test microphone** and speak. A flat meter means no signal.
+2. Use the **Open Windows microphone settings** link on the error. Windows feeds
+   blocked apps an all-zero stream rather than failing, so a privacy block looks
+   exactly like a dead mic.
+3. Pick the right device in the **Microphone** dropdown — the default input is
+   often a webcam or monitor mic, not the one you are talking into.
+
+### The settings panel is cut off at the bottom
+
+Fixed in 0.2.3. The window was capped at 540px tall and grew *downward* from a
+bubble sitting near the taskbar, so the lower rows (including the Groq API key)
+fell off-screen with no way to reach them. The panel is now taller, clamped to
+the monitor work area, moved back on-screen when it expands, and it scrolls
+internally with a sticky header — so no row can be unreachable.
+
 ### The hotkey does nothing
 
 Another process already owns `\`. Check for leftover OrcaVoice processes:
@@ -245,6 +276,29 @@ Audio is captured locally and sent **only** when you stop recording, directly to
 In any mode other than Raw, the resulting *text* is also sent to Groq for polishing.
 
 ## Changelog
+
+### 0.2.3 — 12 August 2026
+
+- **Fixed:** "Recording looks silent" rejected real dictation. The gate compared
+  *average* RMS against 80; speech with normal pauses falls below that, so valid
+  audio was discarded before it ever reached Groq. It now gates on **peak
+  amplitude** (~-54 dBFS) and names the device and measured level in the error.
+- **Fixed:** the settings panel was clipped at the bottom, hiding the Groq API
+  key row. The window was capped at 540px and grew downward from a bubble near
+  the taskbar. It is now taller, clamped to the monitor work area, pulled back
+  on-screen when expanding, restored to its previous spot on collapse, and
+  scrollable with a sticky header.
+- **Added:** microphone picker (`input_device`), which falls back to the system
+  default if the chosen device disappears.
+- **Added:** **Test microphone** with a live level meter, plus a one-click link
+  to Windows microphone privacy settings on silence errors. The test auto-stops
+  after 15s and is torn down whenever the panel closes or a dictation starts, so
+  it can never hold the capture device open.
+- Capture now accepts I8/I16/I32/F32 microphones, downmixes to mono and
+  resamples to 16 kHz for Groq.
+- **Auto-start is on by default** and re-asserted from `start_on_login` at every
+  launch, so a reinstall cannot silently drop it. Turning it off persists.
+  Dev builds skip this, so `target\debug` is never registered for login.
 
 ### 0.2.2 — 28 July 2026
 

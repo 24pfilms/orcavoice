@@ -4,6 +4,7 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type {
   AppSettings,
   HistoryEntry,
+  InputLevel,
   MicrophoneDevice,
   PlatformInfo,
   SecretStatus,
@@ -35,6 +36,15 @@ export function clearApiKey(provider: SpeechProvider) {
 
 export function listMicrophones() {
   return invoke<MicrophoneDevice[]>("list_microphones");
+}
+
+export function getInputLevel() {
+  return invoke<InputLevel>("get_input_level");
+}
+
+/** Windows only: opens Settings > Privacy & security > Microphone. */
+export function openMicrophoneSettings() {
+  return invoke<void>("open_microphone_settings");
 }
 
 export function isRecording() {

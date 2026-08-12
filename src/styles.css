@@ -293,6 +293,36 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* The window can be shorter than the panel on small screens or near the
+     taskbar, which used to cut the API key row off the bottom with no way to
+     reach it. Scroll inside the panel instead of clipping. */
+  min-height: 0;
+  max-height: calc(100vh - 68px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.settings-popover::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-popover::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
+
+/* Sticky so the title and close button stay reachable while scrolling. */
+.settings-popover .popover-header {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  margin: -16px -16px 0;
+  padding: 16px 16px 8px;
+  background: rgb(28, 32, 48);
 }
 
 .popover-header,
@@ -434,10 +464,13 @@ input[type="range"] {
   font-weight: 900;
 }
 
-.mini-error,
 .mini-result {
   max-height: 56px;
   overflow: hidden;
+}
+
+.mini-error,
+.mini-result {
   border-radius: 10px;
   padding: 9px 10px;
   font-size: 11px;
@@ -448,6 +481,57 @@ input[type="range"] {
   color: #ffb9c1;
   background: color-mix(in srgb, var(--border) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 28%, transparent);
+}
+
+.link-button {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  height: auto !important;
+  background: none !important;
+  color: #ffd7dc !important;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+/* === Mic check === */
+
+.mic-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mic-check-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.level-meter {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.level-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4ade80, #facc15 70%, #f87171);
+  transition: width 90ms linear;
+}
+
+.level-hint {
+  flex: 0 0 auto;
+  min-width: 92px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: right;
 }
 
 .mini-result {

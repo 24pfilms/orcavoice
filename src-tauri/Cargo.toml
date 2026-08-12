@@ -1,6 +1,6 @@
 [package]
 name = "orcavoice"
-version = "0.2.2"
+version = "0.2.3"
 description = "System-wide speech-to-text dictation powered by Groq."
 authors = ["SquareCircle Labs"]
 edition = "2021"

@@ -38,6 +38,8 @@ export const testSettings: AppSettings = {
   outline_width: 1,
   groq_api_key: "gsk_test",
   enhancement_model: "llama-4-scout-17b-16e-instruct",
+  input_device: "",
+  start_on_login: true,
 };
 
 /**
@@ -63,7 +65,14 @@ export function transcriptionOperation(text = "hello world"): TranscriptionOpera
   return {
     entry: { ...result, id: "entry-1", created_at: "2026-07-28T00:00:00Z" },
     result,
-    recording: { duration_ms: 1200, sample_rate: 16_000, samples: 19_200, rms: 900 },
+    recording: {
+      duration_ms: 1200,
+      sample_rate: 16_000,
+      samples: 19_200,
+      rms: 900,
+      peak: 0.31,
+      device: "Test microphone",
+    },
     pasted: true,
   };
 }
@@ -117,6 +126,16 @@ export function createFakeBackend(): FakeBackend {
         return backend.secrets;
       case "is_recording":
         return backend.recording;
+      case "list_microphones":
+        return [{ name: "Test microphone", is_default: true }];
+      case "get_input_level":
+        return {
+          recording: backend.recording,
+          peak: backend.recording ? 0.4 : 0,
+          device: "Test microphone",
+          samples: backend.recording ? 4_800 : 0,
+          elapsed_ms: 300,
+        };
       case "start_recording":
         backend.recording = true;
         return undefined;
@@ -137,6 +156,7 @@ export function createFakeBackend(): FakeBackend {
       case "show_settings_overlay":
       case "hide_overlay":
       case "start_overlay_drag":
+      case "open_microphone_settings":
       case "paste_text":
         return undefined;
       default:

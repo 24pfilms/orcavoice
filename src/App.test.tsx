@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App, { HIDE_AFTER_ERROR_MS, HIDE_AFTER_SUCCESS_MS } from "./App";
+import App, { HIDE_AFTER_ERROR_MS, HIDE_AFTER_SUCCESS_MS, MIC_TEST_MAX_MS } from "./App";
 import {
   createFakeBackend,
   deferred,
@@ -71,6 +71,19 @@ function toolbar() {
   const bar = document.querySelector(".toolbar-bar");
   if (!bar) throw new Error("toolbar is not rendered");
   return bar;
+}
+
+async function click(element: HTMLElement) {
+  await act(async () => {
+    element.click();
+    await flushMicrotasks();
+  });
+}
+
+/** Open the settings panel, where the mic check and autostart controls live. */
+async function openSettings() {
+  await click(screen.getByTitle("Settings"));
+  return screen.getByRole("button", { name: "Test microphone" });
 }
 
 describe("OrcaVoice overlay lifecycle", () => {
@@ -283,5 +296,72 @@ describe("OrcaVoice overlay lifecycle", () => {
     // Once the flight lands, the overlay accepts input again.
     await pressHotkey();
     expect(backend.countOf("start_recording")).toBe(2);
+  });
+});
+
+describe("microphone check", () => {
+  beforeEach(() => {
+    backend.reset();
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls the input level while testing and releases the microphone on stop", async () => {
+    await renderOverlay();
+    const testButton = await openSettings();
+
+    await click(testButton);
+    expect(backend.countOf("start_recording")).toBe(1);
+
+    await advance(400);
+    expect(backend.countOf("get_input_level")).toBeGreaterThan(0);
+    expect(screen.getByRole("meter", { name: "Microphone level" })).toHaveAttribute(
+      "aria-valuenow",
+      "40",
+    );
+
+    await click(screen.getByRole("button", { name: "Stop test" }));
+    // The capture device is handed back, and polling really stops.
+    expect(backend.countOf("cancel_recording")).toBe(1);
+    const pollsAtStop = backend.countOf("get_input_level");
+    await advance(1000);
+    expect(backend.countOf("get_input_level")).toBe(pollsAtStop);
+  });
+
+  it("stops a forgotten test on its own so the microphone is never held open", async () => {
+    await renderOverlay();
+    await click(await openSettings());
+
+    await advance(MIC_TEST_MAX_MS + 200);
+    expect(backend.countOf("cancel_recording")).toBe(1);
+    expect(screen.getByRole("button", { name: "Test microphone" })).toBeInTheDocument();
+  });
+
+  it("releases the microphone when a real dictation starts", async () => {
+    await renderOverlay();
+    await click(await openSettings());
+    expect(backend.countOf("start_recording")).toBe(1);
+
+    await pressHotkey();
+    // Torn down before the dictation claims the device, not left running.
+    expect(backend.countOf("cancel_recording")).toBe(1);
+    expect(backend.countOf("start_recording")).toBe(2);
+    expect(toolbar().className).toContain("is-recording");
+  });
+
+  it("persists the startup choice so it survives the next launch", async () => {
+    await renderOverlay();
+    await openSettings();
+
+    await click(screen.getByRole("checkbox", { name: /startup/i }));
+
+    const saved = backend.callsOf("save_settings").at(-1);
+    expect(saved?.newSettings).toMatchObject({ start_on_login: true });
+    // Saving this way must not collapse the panel mid-configuration.
+    expect(screen.getByRole("button", { name: "Test microphone" })).toBeInTheDocument();
   });
 });
