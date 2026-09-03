@@ -1,5 +1,6 @@
 export type SpeechProvider = "groq";
 export type DictationMode = "raw" | "grammar" | "email" | "translate-english" | "custom";
+export type ActivationMode = "toggle" | "push-to-talk";
 
 export interface ProviderSettings {
   model: string;
@@ -12,9 +13,11 @@ export interface AppSettings {
   active_provider: SpeechProvider;
   groq: ProviderSettings;
   hotkey: string;
+  activation_mode: ActivationMode;
   mode: DictationMode;
   custom_mode_instruction: string;
   auto_paste: boolean;
+  selection_actions_enabled: boolean;
   retain_audio: boolean;
   output_mode: string;
   bubble_outline: string;
@@ -79,6 +82,7 @@ export interface TranscriptionOperation {
   result: TranscriptionResult;
   recording: RecordingSummary;
   pasted: boolean;
+  action: boolean;
 }
 
 export interface PlatformInfo {

@@ -12,7 +12,8 @@ import type {
   TranscriptionOperation,
 } from "./types";
 
-export const HOTKEY_EVENT = "orcavoice://hotkey-toggle";
+export const HOTKEY_DOWN_EVENT = "orcavoice://hotkey-down";
+export const HOTKEY_UP_EVENT = "orcavoice://hotkey-up";
 
 export function getSettings() {
   return invoke<AppSettings>("get_settings");
@@ -111,8 +112,12 @@ export function startOverlayDrag() {
   return invoke<void>("start_overlay_drag");
 }
 
-export function onHotkeyToggle(handler: () => void) {
-  return listen(HOTKEY_EVENT, handler);
+export function onHotkeyDown(handler: () => void) {
+  return listen(HOTKEY_DOWN_EVENT, handler);
+}
+
+export function onHotkeyUp(handler: () => void) {
+  return listen(HOTKEY_UP_EVENT, handler);
 }
 
 export { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled };

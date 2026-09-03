@@ -1,16 +1,21 @@
-# OrcaVoice
+# OrcaVoice Actions Preview
 
-A minimal, always-available speech-to-text dictation overlay for Windows, macOS, and Linux.
+> **Experimental build:** this is separate from stable OrcaVoice v0.2.3. It uses
+> its own executable name, app identity, settings folder, and Windows keyring
+> entry. Close stable OrcaVoice before testing because both use the same default
+> global hotkey (`\`). The preview does not start with Windows unless enabled.
+
+An experimental speech-to-text overlay with Windows desktop actions.
 
 Press a key. Speak. Text appears wherever your cursor is.
 
-**Version 0.2.3** · Last updated 12 August 2026
+**Version 0.3.0-1 (preview)** · Last updated 3 September 2026
 
 ![OrcaVoice overlay](docs/orcavoice-overlay.png)
 
 ## How it works
 
-OrcaVoice lives hidden in your system tray. Press your trigger key (default: `\`) and a tiny floating bubble appears. Speak naturally. Press the key again and your words are transcribed and pasted into whatever app has focus.
+OrcaVoice lives hidden in your system tray. In the default **toggle** mode, press your trigger key (default: `\`) to start and press it again to stop. In **push-to-talk** mode, hold the key while speaking and release it to stop. Text returns to the app that was active when recording began.
 
 **Toolbar controls:** drag · language · mic · mode · provider · status · settings · cancel
 
@@ -18,14 +23,15 @@ OrcaVoice lives hidden in your system tray. Press your trigger key (default: `\`
 
 - **Invisible until needed** — hidden in the tray, summoned by a single key
 - **Groq Whisper Large v3 Turbo** for sub-second transcription
-- **One-key toggle** — press `\` to start, press again to stop and paste
+- **Toggle or push-to-talk** — press twice, or hold and release
+- **Selected-text actions on Windows (opt-in)** — select text, speak an instruction, and replace it in the original app; see [Desktop actions](docs/desktop-actions.md)
 - **Audio feedback** — native start/stop WAV sound so you know it's listening
 - **System audio ducking** — mutes other app audio while recording, then restores it on stop
 - **Visual feedback** — pulsing status dot and border glow during recording
 - **Movable** — drag the bubble anywhere with the grab handle
 - **Customizable outline** — pick your own bubble accent color
 - **Microphone picker + live level meter** — choose your input and prove it works before dictating
-- **Auto-start on boot** — on by default, re-asserted at every launch so an upgrade cannot silently drop it
+- **Auto-start on boot** — off by default in the preview so it cannot race stable OrcaVoice for the global hotkey
 - **Single instance** — a second launch surfaces the running app instead of fighting it for the hotkey
 - **API keys stored securely** — OS keyring + settings.json fallback
 - **Five dictation modes** — Raw, Grammar, Email, Translate, Custom (all polished by Groq's LLM)
@@ -69,8 +75,9 @@ npm test               # build + vitest + cargo test (needs cargo on PATH)
 (`src/test/tauri-backend-mock.ts`) that mocks `@tauri-apps/api/core`'s `invoke`.
 It locks in the overlay lifecycle: the bubble hides after a **failed**
 transcription as well as a successful one, a new recording cancels a pending
-hide, and a hotkey press during an in-flight transcription is ignored rather
-than restarting the recorder.
+hide, and input during an in-flight transcription is ignored rather than
+restarting the recorder. It also covers toggle and push-to-talk transitions,
+early released hotkeys, repeat suppression, and desktop-action outcomes.
 
 > **Never build with bare `cargo build --release`.**
 >
@@ -98,9 +105,11 @@ also supply it via the `GROQ_API_KEY` environment variable, which takes priority
 
 ## Using OrcaVoice
 
-1. Press `\` (or your configured trigger key) — the bubble appears and the start sound plays
-2. Speak naturally — other app audio is muted while recording
-3. Press `\` again — the stop sound plays, audio is restored, and text is transcribed/pasted
+1. In **toggle** mode, press `\` (or your configured trigger key) to start; press it again to stop.
+2. In **push-to-talk** mode, hold the key while speaking; release it to stop. A release during startup is queued.
+3. OrcaVoice restores the original target app and inserts the result. On Windows it does this without opening or changing the clipboard.
+
+With **Transform selected text** enabled on Windows, readable selected text changes the workflow: your speech is treated as an instruction, such as “make this concise,” and Groq returns only replacement text. Without readable selected text, ordinary dictation runs unchanged. The opt-in, privacy boundary, supported controls, and failure behavior are documented in [Desktop actions](docs/desktop-actions.md).
 
 ### Sound effects and audio ducking
 
@@ -134,6 +143,8 @@ Click `···` on the bubble to access:
 - **Microphone** — pick an input device, or follow the Windows default
 - **Test microphone** — a live level meter that proves audio is reaching OrcaVoice (auto-stops after 15s)
 - **Mode** — Raw, Grammar correction, Email formatting, Translate to English, Custom
+- **Activation** — press to toggle, or hold for push-to-talk
+- **Transform selected text** — Windows-only opt-in that sends the selection and spoken instruction to Groq
 - **Language** — transcription language, or auto-detect
 - **Custom vocabulary** — bias the transcript toward names and jargon you use
 - **Enhancement model** — Groq LLM used to polish non-raw modes
@@ -153,9 +164,10 @@ rather than failing the dictation.
 
 ### The overlay is blank, black, or shows an old UI
 
-The binary was built with bare `cargo build --release`, so it is a dev build
-loading `http://localhost:1420` instead of its embedded frontend. Rebuild with
-`npm run tauri:build`. The build now refuses to produce this binary.
+First, rebuild with `npm run tauri:build`; bare `cargo build --release` creates a
+dev binary that loads `http://localhost:1420`. If controls appear inside a black
+rectangle, reinstall the latest preview—the Windows build now uses Tauri's native
+alpha-composition path and removes shadows that tinted otherwise transparent pixels.
 
 ### The app starts but nothing appears
 
@@ -170,9 +182,9 @@ rebuilds `dist/` but never the installed binary, so a frontend fix does not
 reach the app you actually use until you rebuild and reinstall:
 
 ```bash
-ls -la "$LOCALAPPDATA/OrcaVoice/orcavoice.exe"   # is this older than your change?
+ls -la "$LOCALAPPDATA/OrcaVoice Actions Preview/orcavoice-actions-preview.exe"
 npm run tauri:build
-# then run target/release/bundle/nsis/OrcaVoice_<version>_x64-setup.exe
+# then run target/release/bundle/nsis/OrcaVoice Actions Preview_<version>_x64-setup.exe
 ```
 
 Three separate defects produced this symptom:
@@ -250,13 +262,13 @@ This can no longer fail a dictation:
 - Both files are written atomically (temp + fsync + rename), so an unclean
   shutdown cannot produce a half-written file in the first place.
 
-Quarantined files stay in `%APPDATA%/com.squarecirclelabs.orcavoice/`.
+Quarantined preview files stay in `%APPDATA%/com.squarecirclelabs.orcavoice-actions-preview/`.
 
 ### Settings look wrong after an upgrade
 
 `settings.json` is rewritten on load whenever it differs from the canonical
 shape, so retired keys are dropped automatically. Delete it to reset:
-`%APPDATA%/com.squarecirclelabs.orcavoice/settings.json`.
+`%APPDATA%/com.squarecirclelabs.orcavoice-actions-preview/settings.json`.
 
 ## Tech stack
 
@@ -267,15 +279,27 @@ shape, so retired keys are dropped automatically. Delete it to reset:
 | Frontend | React + TypeScript + Vite |
 | STT | Groq Whisper Large v3 Turbo |
 | Mode polishing | Groq LLM (Llama 4 Scout / Llama 3.3 70B) |
-| Clipboard paste | Enigo keyboard simulation |
+| Text insertion | Windows `SendInput`; clipboard + Enigo on macOS/Linux |
 
 ## Privacy
 
 Audio is captured locally and sent **only** when you stop recording, directly to Groq. No intermediate servers. No audio retention. Transcription history is stored locally in your app data directory.
 
-In any mode other than Raw, the resulting *text* is also sent to Groq for polishing.
+In any mode other than Raw, the resulting *text* is also sent to Groq for polishing. Selected desktop text leaves the machine **only** when **Transform selected text** is enabled and OrcaVoice can read a non-empty Windows selection. It is bounded to 16,000 characters, never logged or stored, and sent directly to Groq with the spoken instruction. See [Desktop actions](docs/desktop-actions.md).
 
 ## Changelog
+
+### 0.3.0-1 Actions Preview — 3 September 2026
+
+- Packaged separately from stable OrcaVoice: distinct executable, app identity,
+  settings directory, keyring entry, window title, and tray name.
+- Preview autostart is off by default to avoid competing with stable OrcaVoice
+  for the same global hotkey.
+- Added toggle/push-to-talk activation and opt-in selected-text voice actions.
+- Added verified target-window restoration and clipboard-free Windows text
+  insertion using Unicode `SendInput`.
+- Fixed the Windows overlay alpha channel using Tauri's native composition flag;
+  removed the conflicting DWM workaround and shadows that tinted transparent pixels.
 
 ### 0.2.3 — 12 August 2026
 

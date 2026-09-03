@@ -1,4 +1,5 @@
 mod audio;
+mod desktop_context;
 mod ducking;
 mod error;
 mod feedback;
@@ -13,6 +14,7 @@ mod stt;
 mod tray;
 
 use audio::{InputLevel, MicrophoneDevice, RecorderState, RecordingSummary};
+use desktop_context::{DesktopContext, DesktopContextState};
 use history::HistoryEntry;
 use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SpeechProvider};
@@ -41,6 +43,7 @@ pub struct TranscriptionOperation {
     pub result: TranscriptionResult,
     pub recording: RecordingSummary,
     pub pasted: bool,
+    pub action: bool,
 }
 
 #[tauri::command]
@@ -119,11 +122,23 @@ fn play_feedback_tone(kind: String) {
 }
 
 #[tauri::command]
-fn start_recording(app: AppHandle, recorder: State<RecorderState>) -> Result<(), String> {
-    let preferred = settings::load_settings(&app)
-        .map(|settings| settings.input_device)
-        .unwrap_or_default();
-    audio::start_recording(&recorder, Some(preferred.as_str())).map_err(String::from)
+fn start_recording(
+    app: AppHandle,
+    recorder: State<RecorderState>,
+    desktop: State<DesktopContextState>,
+) -> Result<(), String> {
+    let settings = settings::load_settings(&app).unwrap_or_default();
+    let context = DesktopContext::capture(settings.selection_actions_enabled).map_err(String::from)?;
+    *desktop
+        .0
+        .lock()
+        .map_err(|_| "Desktop context state is unavailable.".to_string())? = Some(context);
+
+    if let Err(error) = audio::start_recording(&recorder, Some(settings.input_device.as_str())) {
+        clear_desktop_context(&desktop);
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -153,22 +168,46 @@ fn open_microphone_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn cancel_recording(recorder: State<RecorderState>) {
+fn cancel_recording(recorder: State<RecorderState>, desktop: State<DesktopContextState>) {
     audio::cancel_recording(&recorder);
+    clear_desktop_context(&desktop);
+}
+
+fn clear_desktop_context(desktop: &DesktopContextState) {
+    if let Ok(mut context) = desktop.0.lock() {
+        *context = None;
+    }
+}
+
+fn take_desktop_context(desktop: &DesktopContextState) -> Result<Option<DesktopContext>, String> {
+    desktop
+        .0
+        .lock()
+        .map(|mut context| context.take())
+        .map_err(|_| "Desktop context state is unavailable.".to_string())
 }
 
 #[tauri::command]
 async fn stop_and_transcribe(
     app: AppHandle,
     recorder: State<'_, RecorderState>,
+    desktop: State<'_, DesktopContextState>,
 ) -> Result<TranscriptionOperation, String> {
+    let context = take_desktop_context(&desktop)?;
     let captured = audio::stop_recording(&recorder).map_err(String::from)?;
     let settings = settings::load_settings(&app).map_err(String::from)?;
-    let result = stt::transcribe_active_provider(&settings, &captured)
+    let selected_text = context
+        .as_ref()
+        .and_then(|context| context.selected_text.as_deref());
+    let action = selected_text.is_some();
+    let result = stt::transcribe_active_provider(&settings, &captured, selected_text)
         .await
         .map_err(String::from)?;
     let pasted = if settings.auto_paste {
-        output::paste_text(&app, &result.text).map_err(String::from)?;
+        let target = context
+            .as_ref()
+            .ok_or_else(|| "The recording has no verified target window.".to_string())?;
+        output::paste_text(&app, &result.text, target).map_err(String::from)?;
         true
     } else {
         false
@@ -187,12 +226,14 @@ async fn stop_and_transcribe(
         result,
         recording: captured.summary,
         pasted,
+        action,
     })
 }
 
 #[tauri::command]
 fn paste_text(app: AppHandle, text: String) -> Result<(), String> {
-    output::paste_text(&app, &text).map_err(String::from)
+    let context = DesktopContext::capture(false).map_err(String::from)?;
+    output::paste_text(&app, &text, &context).map_err(String::from)
 }
 
 #[tauri::command]
@@ -337,9 +378,8 @@ fn position_near_taskbar(window: &tauri::WebviewWindow, width: f64, height: f64)
         .map_err(|e| e.to_string())
 }
 
-/// Re-assert the OS login entry on every launch so a reinstall, a moved
-/// executable, or a wiped profile cannot silently stop OrcaVoice from starting
-/// with Windows. Never fatal: a locked registry must not block dictation.
+/// Keep the requested login behavior aligned with the OS entry. Never fatal:
+/// a locked registry must not block dictation.
 fn sync_autostart(app: &AppHandle, wanted: bool) {
     use tauri_plugin_autostart::ManagerExt;
     // The plugin registers whichever executable is running, so doing this in a
@@ -363,6 +403,28 @@ fn sync_autostart(app: &AppHandle, wanted: bool) {
     }
 }
 
+fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .ok_or_else(|| tauri::Error::AssetNotFound("Main window configuration".into()))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        tauri::WebviewWindowBuilder::from_config(app, config)?
+            .no_redirection_bitmap(true)
+            .build()
+            .map(|_| ())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri::WebviewWindowBuilder::from_config(app, config)?.build().map(|_| ())
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Must be the first plugin: a second launch (autostart + manual start)
@@ -374,18 +436,19 @@ pub fn run() {
             }
         }))
         .manage(RecorderState::default())
+        .manage(DesktopContextState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
         .setup(|app| {
+            create_main_window(app)?;
             let app_handle = app.handle().clone();
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(|app, _shortcut, event| {
-                        hotkey::emit_hotkey_if_pressed(app, event.state());
+                        hotkey::emit_hotkey_event(app, event.state());
                     })
                     .build(),
             )?;

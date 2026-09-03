@@ -1,7 +1,7 @@
 [package]
-name = "orcavoice"
-version = "0.2.3"
-description = "System-wide speech-to-text dictation powered by Groq."
+name = "orcavoice-actions-preview"
+version = "0.3.0-1"
+description = "Experimental OrcaVoice build with Windows desktop actions."
 authors = ["SquareCircle Labs"]
 edition = "2021"
 license = "MIT"
@@ -14,7 +14,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-anyhow = "1.0.103"
 chrono = { version = "0.4.45", features = ["serde"] }
 cpal = "0.18.1"
 enigo = "0.6.1"
@@ -28,10 +27,18 @@ tauri-plugin-autostart = "2.5"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-single-instance = "2.4.3"
-tauri-plugin-store = "2.4.3"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time"] }
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_System_Com", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_System_Com", "Win32_Media_Audio"] }
+
+# Temporary until Tauri publishes the merged Windows alpha-composition API.
+[patch.crates-io]
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "a5dc562a0088bc447ed9efbef532da3b4be1ac1c" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "a5dc562a0088bc447ed9efbef532da3b4be1ac1c" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "a5dc562a0088bc447ed9efbef532da3b4be1ac1c" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "a5dc562a0088bc447ed9efbef532da3b4be1ac1c" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "a5dc562a0088bc447ed9efbef532da3b4be1ac1c" }

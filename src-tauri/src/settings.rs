@@ -38,6 +38,14 @@ pub enum DictationMode {
     Custom,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ActivationMode {
+    #[default]
+    Toggle,
+    PushToTalk,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppSettings {
     // Legacy settings files may name a provider OrcaVoice no longer supports;
@@ -46,9 +54,13 @@ pub struct AppSettings {
     pub active_provider: SpeechProvider,
     pub groq: ProviderSettings,
     pub hotkey: String,
+    #[serde(default)]
+    pub activation_mode: ActivationMode,
     pub mode: DictationMode,
     pub custom_mode_instruction: String,
     pub auto_paste: bool,
+    #[serde(default)]
+    pub selection_actions_enabled: bool,
     pub retain_audio: bool,
     pub output_mode: String,
     #[serde(default = "default_bubble_outline")]
@@ -63,16 +75,10 @@ pub struct AppSettings {
     /// name because cpal device ids are not stable across reboots.
     #[serde(default)]
     pub input_device: String,
-    /// On by default: dictation is only useful if it is already running when
-    /// you reach for the trigger key. Each launch re-asserts the OS entry, so
-    /// an installer or profile reset cannot silently drop it - but an explicit
-    /// opt-out is stored here and honoured.
-    #[serde(default = "default_true")]
+    /// Off by default in the Actions Preview so it cannot race the stable app
+    /// for the global hotkey at login. An explicit opt-in is still honoured.
+    #[serde(default)]
     pub start_on_login: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for AppSettings {
@@ -86,9 +92,11 @@ impl Default for AppSettings {
                 endpoint: "https://api.groq.com/openai/v1/audio/transcriptions".to_string(),
             },
             hotkey: "\\".to_string(),
+            activation_mode: ActivationMode::Toggle,
             mode: DictationMode::Raw,
             custom_mode_instruction: String::new(),
             auto_paste: true,
+            selection_actions_enabled: false,
             retain_audio: false,
             output_mode: "clipboard-paste".to_string(),
             bubble_outline: default_bubble_outline(),
@@ -96,7 +104,7 @@ impl Default for AppSettings {
             groq_api_key: String::new(),
             enhancement_model: default_enhancement_model(),
             input_device: String::new(),
-            start_on_login: true,
+            start_on_login: false,
         }
     }
 }
@@ -118,7 +126,8 @@ pub fn settings_path(app: &AppHandle) -> Result<PathBuf, AppError> {
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Config(format!("Cannot resolve app data directory: {e}")))?;
-    fs::create_dir_all(&dir).map_err(|e| AppError::Config(format!("Cannot create app data directory: {e}")))?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| AppError::Config(format!("Cannot create app data directory: {e}")))?;
     Ok(dir.join("settings.json"))
 }
 
@@ -130,8 +139,9 @@ pub fn load_settings(app: &AppHandle) -> Result<AppSettings, AppError> {
         return Ok(defaults);
     }
 
-    let text = fs::read_to_string(&path)
-        .map_err(|e| AppError::Config(format!("Cannot read settings file {}: {e}", path.display())))?;
+    let text = fs::read_to_string(&path).map_err(|e| {
+        AppError::Config(format!("Cannot read settings file {}: {e}", path.display()))
+    })?;
     let mut loaded: AppSettings = match serde_json::from_str(&text) {
         Ok(loaded) => loaded,
         Err(error) => {

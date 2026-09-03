@@ -3,7 +3,9 @@ use crate::settings::SpeechProvider;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
-const SERVICE_NAME: &str = "com.squarecirclelabs.orcavoice";
+// Keep preview credentials isolated: clearing its key must never erase the
+// stable OrcaVoice key from Windows Credential Manager.
+const SERVICE_NAME: &str = "com.squarecirclelabs.orcavoice-actions-preview";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SecretStatus {

@@ -4,7 +4,13 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), AppError> {
-    let show = MenuItem::with_id(app, "show", "Show OrcaVoice", true, None::<&str>)
+    let show = MenuItem::with_id(
+        app,
+        "show",
+        "Show OrcaVoice Actions Preview",
+        true,
+        None::<&str>,
+    )
         .map_err(|e| AppError::Config(format!("Cannot build tray menu item: {e}")))?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)
         .map_err(|e| AppError::Config(format!("Cannot build tray menu item: {e}")))?;
@@ -20,7 +26,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), AppError> {
 
     TrayIconBuilder::new()
         .icon(icon)
-        .tooltip("OrcaVoice")
+        .tooltip("OrcaVoice Actions Preview")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

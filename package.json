@@ -1,9 +1,9 @@
 {
-  "name": "orcavoice",
-  "version": "0.2.3",
+  "name": "orcavoice-actions-preview",
+  "version": "0.3.0-1",
   "private": true,
   "type": "module",
-  "description": "System-wide speech-to-text dictation powered by Groq.",
+  "description": "Experimental OrcaVoice build with Windows desktop actions.",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

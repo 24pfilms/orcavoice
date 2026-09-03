@@ -29,9 +29,11 @@ export const testSettings: AppSettings = {
     endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
   },
   hotkey: "\\",
+  activation_mode: "toggle",
   mode: "raw",
   custom_mode_instruction: "",
   auto_paste: true,
+  selection_actions_enabled: false,
   retain_audio: false,
   output_mode: "clipboard-paste",
   bubble_outline: "#ff4057",
@@ -39,7 +41,7 @@ export const testSettings: AppSettings = {
   groq_api_key: "gsk_test",
   enhancement_model: "llama-4-scout-17b-16e-instruct",
   input_device: "",
-  start_on_login: true,
+  start_on_login: false,
 };
 
 /**
@@ -74,18 +76,21 @@ export function transcriptionOperation(text = "hello world"): TranscriptionOpera
       device: "Test microphone",
     },
     pasted: true,
+    action: false,
   };
 }
 
 export interface FakeBackend {
   /** Mirrors the Rust `RecorderState`: true between start and stop. */
   recording: boolean;
+  settings: AppSettings;
   secrets: SecretStatus;
   /** Swap per test to make `stop_and_transcribe` resolve, reject, or hang. */
   transcribe: () => Promise<TranscriptionOperation>;
   invoke: InvokeMock;
   /** Handlers currently registered via `listen`, so a leak is observable. */
   hotkeyHandlers: Set<() => void>;
+  hotkeyUpHandlers: Set<() => void>;
   listen: ListenMock;
   callsOf: (command: string) => Array<Record<string, unknown> | undefined>;
   countOf: (command: string) => number;
@@ -95,19 +100,23 @@ export interface FakeBackend {
 export function createFakeBackend(): FakeBackend {
   const backend: FakeBackend = {
     recording: false,
+    settings: { ...testSettings, groq: { ...testSettings.groq } },
     secrets: { groq: true, env_groq: false },
     transcribe: () => Promise.resolve(transcriptionOperation()),
     invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
     hotkeyHandlers: new Set<() => void>(),
+    hotkeyUpHandlers: new Set<() => void>(),
     listen: vi.fn<(event: string, handler: () => void) => Promise<() => void>>(),
     callsOf: (command) =>
       backend.invoke.mock.calls.filter((call) => call[0] === command).map((call) => call[1]),
     countOf: (command) => backend.callsOf(command).length,
     reset: () => {
       backend.recording = false;
+      backend.settings = { ...testSettings, groq: { ...testSettings.groq } };
       backend.secrets = { groq: true, env_groq: false };
       backend.transcribe = () => Promise.resolve(transcriptionOperation());
       backend.hotkeyHandlers.clear();
+      backend.hotkeyUpHandlers.clear();
       // Reinstate the implementations: a test that overrides `invoke` to make a
       // command fail would otherwise leak that failure into every later test.
       backend.invoke.mockReset();
@@ -117,11 +126,16 @@ export function createFakeBackend(): FakeBackend {
     },
   };
 
-  const defaultInvoke = async (command: string): Promise<unknown> => {
+  const defaultInvoke = async (
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<unknown> => {
     switch (command) {
       case "get_settings":
+        return backend.settings;
       case "save_settings":
-        return testSettings;
+        backend.settings = args?.newSettings as AppSettings;
+        return backend.settings;
       case "get_secret_status":
         return backend.secrets;
       case "is_recording":
@@ -165,10 +179,11 @@ export function createFakeBackend(): FakeBackend {
     }
   };
 
-  const defaultListen = async (_event: string, handler: () => void) => {
-    backend.hotkeyHandlers.add(handler);
+  const defaultListen = async (event: string, handler: () => void) => {
+    const handlers = event === "orcavoice://hotkey-up" ? backend.hotkeyUpHandlers : backend.hotkeyHandlers;
+    handlers.add(handler);
     return () => {
-      backend.hotkeyHandlers.delete(handler);
+      handlers.delete(handler);
     };
   };
 

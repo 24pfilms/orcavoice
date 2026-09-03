@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OrcaVoice",
-  "version": "0.2.3",
-  "identifier": "com.squarecirclelabs.orcavoice",
+  "productName": "OrcaVoice Actions Preview",
+  "version": "0.3.0-1",
+  "identifier": "com.squarecirclelabs.orcavoice-actions-preview",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,8 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "OrcaVoice",
+        "create": false,
+        "title": "OrcaVoice Actions Preview",
         "width": 310,
         "height": 60,
         "minWidth": 280,
@@ -44,8 +45,8 @@
     "publisher": "SquareCircle Labs",
     "copyright": "Copyright 2026 SquareCircle Labs",
     "category": "Productivity",
-    "shortDescription": "System-wide speech-to-text dictation.",
-    "longDescription": "OrcaVoice is a clean-room speech-to-text dictation app powered by Groq.",
+    "shortDescription": "Experimental speech-to-text desktop actions.",
+    "longDescription": "OrcaVoice Actions Preview is an experimental Windows build for push-to-talk dictation and selected-text voice editing powered by Groq.",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "signingIdentity": null

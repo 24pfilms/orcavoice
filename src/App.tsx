@@ -12,7 +12,8 @@ import {
   isAutostartEnabled,
   isRecording,
   listMicrophones,
-  onHotkeyToggle,
+  onHotkeyDown,
+  onHotkeyUp,
   openMicrophoneSettings,
   playFeedbackTone,
   restoreAudio,
@@ -26,6 +27,7 @@ import {
   unduckAudio,
 } from "./lib/tauri";
 import type {
+  ActivationMode,
   AppSettings,
   DictationMode,
   MicrophoneDevice,
@@ -78,7 +80,12 @@ export default function App() {
   const micTestTimer = useRef<number | undefined>(undefined);
   // Mirrors `micTest.active` for callbacks that must not close over stale state.
   const micTestActive = useRef(false);
-  const toggleInFlight = useRef(false);
+  const operationInFlight = useRef(false);
+  const startupInFlight = useRef(false);
+  const pendingFinish = useRef(false);
+  const recordingRef = useRef(false);
+  const hotkeyHeld = useRef(false);
+  const cancelGeneration = useRef(0);
 
   const activeProviderSettings = settings?.groq;
   const hasActiveKey = secrets.groq || secrets.env_groq;
@@ -105,6 +112,7 @@ export default function App() {
     ]);
     setSettings(loadedSettings);
     setSecrets(loadedSecrets);
+    recordingRef.current = activeRecording;
     setRecording(activeRecording);
     setAutostartOn(autostart);
     setStatus(activeRecording ? "Listening" : "Ready");
@@ -164,13 +172,66 @@ export default function App() {
     [],
   );
 
-  const toggleRecording = useCallback(async () => {
-    if (!settings) return;
-    // The global hotkey repeats while the key is held and the record button is
-    // clickable mid-flight; without this guard a stop turns straight back into
-    // a start and the overlay never settles.
-    if (toggleInFlight.current) return;
-    toggleInFlight.current = true;
+  const recoverFromRecordingFailure = useCallback(
+    async (err: unknown) => {
+      const message = formatError(err);
+      console.error("OrcaVoice dictation failed:", message);
+      setError(message);
+      setLastError(message);
+      setStatus("Error");
+      recordingRef.current = false;
+      setRecording(false);
+      scheduleHide(HIDE_AFTER_ERROR_MS);
+      const recovery = await Promise.allSettled([cancelRecording(), unduckAudio()]);
+      recovery.forEach((result) => {
+        if (result.status === "rejected") {
+          console.error("OrcaVoice recovery failed:", formatError(result.reason));
+        }
+      });
+    },
+    [scheduleHide],
+  );
+
+  const finishRecording = useCallback(async () => {
+    if (startupInFlight.current) {
+      pendingFinish.current = true;
+      return;
+    }
+    if (operationInFlight.current || !recordingRef.current) return;
+    operationInFlight.current = true;
+    const generation = cancelGeneration.current;
+
+    try {
+      cancelPendingHide();
+      await unduckAudio();
+      await playFeedbackTone("stop");
+      await showCompactOverlay();
+      setBusy(true);
+      recordingRef.current = false;
+      setRecording(false);
+      setStatus("Creating text");
+      const operation = await stopAndTranscribe();
+      if (generation !== cancelGeneration.current) return;
+      setError("");
+      setLastError("");
+      setLastOperation(operation);
+      setStatus(operation.action ? "Replaced" : operation.pasted ? "Pasted" : "Created");
+      scheduleHide(HIDE_AFTER_SUCCESS_MS);
+    } catch (err) {
+      if (generation === cancelGeneration.current) {
+        await recoverFromRecordingFailure(err);
+      }
+    } finally {
+      setBusy(false);
+      operationInFlight.current = false;
+    }
+  }, [cancelPendingHide, recoverFromRecordingFailure, scheduleHide]);
+
+  const beginRecording = useCallback(async () => {
+    if (!settings || operationInFlight.current || startupInFlight.current || recordingRef.current) return;
+    operationInFlight.current = true;
+    startupInFlight.current = true;
+    const generation = cancelGeneration.current;
 
     try {
       cancelPendingHide();
@@ -178,82 +239,95 @@ export default function App() {
       setError("");
       setLastOperation(undefined);
       setSettingsOpen(false);
-      // Must stay inside the try: if this IPC call rejects while the in-flight
-      // latch is set, the latch never clears and every later press is dropped,
-      // leaving the overlay stranded on screen forever.
       await showCompactOverlay();
-
-      const backendRecording = await isRecording();
-      if (backendRecording) {
-        await unduckAudio();
-        await playFeedbackTone("stop");
-        await showCompactOverlay();
-        setBusy(true);
-        setRecording(false);
-        setStatus("Creating text");
-        const operation = await stopAndTranscribe();
-        setError("");
-        setLastError("");
-        setLastOperation(operation);
-        setStatus(operation.pasted ? "Pasted" : "Copied");
-        scheduleHide(HIDE_AFTER_SUCCESS_MS);
-      } else {
-        if (!hasActiveKey) {
-          setError(`${PROVIDER_NAME} API key is missing.`);
-          setSettingsOpen(true);
-          await showSettingsOverlay();
-          return;
-        }
-        await playFeedbackTone("start");
-        await startRecording();
-        await duckAudio();
-        await showCompactOverlay();
-        setRecording(true);
-        setStatus("Listening");
+      if (!hasActiveKey) {
+        setError(`${PROVIDER_NAME} API key is missing.`);
+        setSettingsOpen(true);
+        await showSettingsOverlay();
+        return;
       }
-    } catch (err) {
-      const message = formatError(err);
-      console.error("OrcaVoice dictation failed:", message);
-      setError(message);
-      setLastError(message);
-      setStatus("Error");
-      setRecording(false);
-      // Arm the hide before any further IPC. Recovery calls can reject too, and
-      // if that skipped the scheduling the overlay would be stranded again.
-      scheduleHide(HIDE_AFTER_ERROR_MS);
-      try {
+      await playFeedbackTone("start");
+      await startRecording();
+      if (generation !== cancelGeneration.current) {
         await cancelRecording();
-        await unduckAudio();
-      } catch (recoveryError) {
-        console.error("OrcaVoice recovery failed:", formatError(recoveryError));
+        return;
+      }
+      recordingRef.current = true;
+      setRecording(true);
+      await duckAudio();
+      await showCompactOverlay();
+      if (generation !== cancelGeneration.current) {
+        recordingRef.current = false;
+        setRecording(false);
+        await Promise.allSettled([cancelRecording(), unduckAudio()]);
+        return;
+      }
+      setStatus("Listening");
+    } catch (err) {
+      if (generation === cancelGeneration.current) {
+        await recoverFromRecordingFailure(err);
       }
     } finally {
-      setBusy(false);
-      toggleInFlight.current = false;
+      startupInFlight.current = false;
+      operationInFlight.current = false;
+      if (pendingFinish.current) {
+        pendingFinish.current = false;
+        if (generation === cancelGeneration.current && recordingRef.current) void finishRecording();
+      }
     }
-  }, [cancelPendingHide, hasActiveKey, scheduleHide, settings, stopMicTest]);
+  }, [
+    cancelPendingHide,
+    finishRecording,
+    hasActiveKey,
+    recoverFromRecordingFailure,
+    settings,
+    stopMicTest,
+  ]);
+
+  const toggleRecording = useCallback(() => {
+    if (startupInFlight.current || recordingRef.current) {
+      void finishRecording();
+    } else {
+      void beginRecording();
+    }
+  }, [beginRecording, finishRecording]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const activationMode = settings?.activation_mode;
+    if (!activationMode) return;
+
     let disposed = false;
-    onHotkeyToggle(() => {
-      void toggleRecording();
-    })
-      .then((dispose) => {
-        // If cleanup already ran before this promise resolved, dispose
-        // immediately so the listener can never leak and fire twice.
-        if (disposed) {
-          dispose();
-        } else {
-          unlisten = dispose;
-        }
-      })
-      .catch((err: unknown) => setError(formatError(err)));
+    const disposers: Array<() => void> = [];
+    const attach = (listener: Promise<() => void>) =>
+      listener.then((dispose) => {
+        if (disposed) dispose();
+        else disposers.push(dispose);
+      });
+
+    void Promise.all([
+      attach(
+        onHotkeyDown(() => {
+          if (hotkeyHeld.current) return;
+          hotkeyHeld.current = true;
+          if (activationMode === "push-to-talk") void beginRecording();
+          else toggleRecording();
+        }),
+      ),
+      attach(
+        onHotkeyUp(() => {
+          if (!hotkeyHeld.current) return;
+          hotkeyHeld.current = false;
+          if (activationMode === "push-to-talk") void finishRecording();
+        }),
+      ),
+    ]).catch((err: unknown) => setError(formatError(err)));
+
     return () => {
       disposed = true;
-      unlisten?.();
+      hotkeyHeld.current = false;
+      disposers.forEach((dispose) => dispose());
     };
-  }, [toggleRecording]);
+  }, [beginRecording, finishRecording, settings?.activation_mode, toggleRecording]);
 
   async function toggleSettings() {
     // A pending auto-hide must not yank the settings window away mid-edit.
@@ -372,8 +446,12 @@ export default function App() {
 
   async function cancelAndHide() {
     cancelPendingHide();
+    cancelGeneration.current += 1;
+    pendingFinish.current = false;
+    hotkeyHeld.current = false;
     await stopMicTest();
     await cancelRecording();
+    recordingRef.current = false;
     await unduckAudio();
     setRecording(false);
     setBusy(false);
@@ -421,7 +499,7 @@ export default function App() {
   }
 
   if (!settings) {
-    return <main className="overlay-root compact"><div className="pill-group loading-pill">OrcaVoice</div></main>;
+    return <main className="overlay-root compact"><div className="pill-group loading-pill">Actions Preview</div></main>;
   }
 
   return (
@@ -432,7 +510,7 @@ export default function App() {
       <section className={`toolbar-bar ${recording ? "is-recording" : ""} ${busy ? "is-busy" : ""} ${done ? "is-done" : ""} ${error ? "is-error" : ""}`}>
         {/* Pill 1: Drag + Language */}
         <div className="pill-group">
-          <button className="icon-btn grab-handle" title="Drag OrcaVoice" onPointerDown={() => void startOverlayDrag()}>
+          <button className="icon-btn grab-handle" title="Drag OrcaVoice Actions Preview" onPointerDown={() => void startOverlayDrag()}>
             <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
               <rect x="2" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
               <rect x="8.8" y="1" width="3.2" height="12" rx="1" fill="currentColor" />
@@ -487,7 +565,7 @@ export default function App() {
       {settingsOpen ? (
         <section className="settings-popover">
           <div className="popover-header">
-            <strong>OrcaVoice</strong>
+            <strong>OrcaVoice Actions Preview</strong>
             <div className="header-right">
               <span>{compactStatus}</span>
               <button className="close-button" title="Close" onClick={() => void toggleSettings()}>✕</button>
@@ -506,7 +584,7 @@ export default function App() {
           ) : null}
           {lastOperation ? (
             <div className="mini-result">
-              {lastOperation.result.enhanced ? <span className="enhanced-badge">Enhanced</span> : <span className="raw-badge">Raw</span>}
+              {lastOperation.action ? <span className="enhanced-badge">Action</span> : lastOperation.result.enhanced ? <span className="enhanced-badge">Enhanced</span> : <span className="raw-badge">Raw</span>}
               {" "}
               {lastOperation.result.text}
             </div>
@@ -557,6 +635,30 @@ export default function App() {
               <option value="translate-english">Translate to English</option>
               <option value="custom">Custom</option>
             </select>
+          </label>
+
+          <label>
+            Activation
+            <select
+              aria-label="Activation"
+              value={settings.activation_mode}
+              onChange={(event) => updateSettings({ activation_mode: event.target.value as ActivationMode })}
+            >
+              <option value="toggle">Press to start or stop</option>
+              <option value="push-to-talk">Hold to record</option>
+            </select>
+          </label>
+
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={settings.selection_actions_enabled}
+              onChange={(event) => updateSettings({ selection_actions_enabled: event.target.checked })}
+            />
+            <span className="check-copy">
+              Transform selected text
+              <small>Windows only. When enabled, selected text is sent to Groq with your spoken instruction.</small>
+            </span>
           </label>
 
           <label>
@@ -648,7 +750,7 @@ export default function App() {
               checked={autostartOn}
               onChange={() => void toggleAutostart()}
             />
-            Launch OrcaVoice on system startup
+            Launch Actions Preview on system startup
           </label>
 
           <div className="popover-actions">

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { HIDE_AFTER_ERROR_MS, HIDE_AFTER_SUCCESS_MS, MIC_TEST_MAX_MS } from "./App";
 import {
@@ -47,9 +47,18 @@ async function renderOverlay() {
 /** Fire the global hotkey exactly as the Rust side emits it. */
 async function pressHotkey() {
   await act(async () => {
-    for (const handler of [...backend.hotkeyHandlers]) {
-      handler();
+    for (const handler of [...backend.hotkeyHandlers]) handler();
+    await flushMicrotasks();
+    if (backend.settings.activation_mode === "toggle") {
+      for (const handler of [...backend.hotkeyUpHandlers]) handler();
+      await flushMicrotasks();
     }
+  });
+}
+
+async function releaseHotkey() {
+  await act(async () => {
+    for (const handler of [...backend.hotkeyUpHandlers]) handler();
     await flushMicrotasks();
   });
 }
@@ -97,9 +106,10 @@ describe("OrcaVoice overlay lifecycle", () => {
     vi.useRealTimers();
   });
 
-  it("registers exactly one hotkey listener", async () => {
+  it("registers exactly one paired hotkey listener", async () => {
     await renderOverlay();
     expect(backend.hotkeyHandlers.size).toBe(1);
+    expect(backend.hotkeyUpHandlers.size).toBe(1);
   });
 
   it("hides the overlay after a failed transcription instead of staying pinned open", async () => {
@@ -297,6 +307,92 @@ describe("OrcaVoice overlay lifecycle", () => {
     await pressHotkey();
     expect(backend.countOf("start_recording")).toBe(2);
   });
+
+  it("starts on press and stops on release in push-to-talk mode", async () => {
+    backend.settings = { ...backend.settings, activation_mode: "push-to-talk" };
+    await renderOverlay();
+
+    await pressHotkey();
+    expect(backend.countOf("start_recording")).toBe(1);
+    expect(toolbar().className).toContain("is-recording");
+
+    await releaseHotkey();
+    expect(backend.countOf("stop_and_transcribe")).toBe(1);
+    expect(toolbar().className).toContain("is-done");
+  });
+
+  it("suppresses duplicate down events while already recording", async () => {
+    await renderOverlay();
+    await act(async () => {
+      for (const handler of [...backend.hotkeyHandlers]) {
+        handler();
+        handler();
+      }
+      await flushMicrotasks();
+    });
+
+    expect(backend.countOf("start_recording")).toBe(1);
+    expect(backend.countOf("stop_and_transcribe")).toBe(0);
+  });
+
+  it("can start again after cancel clears the recording refs", async () => {
+    await renderOverlay();
+    await pressHotkey();
+    await click(screen.getByTitle("Cancel and hide"));
+    await pressHotkey();
+
+    expect(backend.countOf("start_recording")).toBe(2);
+    expect(backend.countOf("stop_and_transcribe")).toBe(0);
+    expect(toolbar().className).toContain("is-recording");
+  });
+
+  it("queues a push-to-talk release while startup is still pending", async () => {
+    backend.settings = { ...backend.settings, activation_mode: "push-to-talk" };
+    const startup = deferred<void>();
+    const realInvoke = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command, args) => {
+      if (command === "start_recording") {
+        await startup.promise;
+        backend.recording = true;
+        return undefined;
+      }
+      return realInvoke(command, args);
+    });
+    await renderOverlay();
+
+    await pressHotkey();
+    await releaseHotkey();
+    expect(backend.countOf("stop_and_transcribe")).toBe(0);
+
+    await act(async () => {
+      startup.resolve();
+      await flushMicrotasks();
+    });
+    expect(backend.countOf("start_recording")).toBe(1);
+    expect(backend.countOf("stop_and_transcribe")).toBe(1);
+  });
+
+  it("shows a replacement success state for a desktop action", async () => {
+    backend.transcribe = () =>
+      Promise.resolve({ ...transcriptionOperation("shorter text"), action: true });
+    await renderOverlay();
+
+    await pressHotkey();
+    await pressHotkey();
+    expect(toolbar().className).toContain("is-done");
+    expect(statusDot()).toHaveAttribute("title", "Replaced");
+  });
+
+  it("surfaces a desktop action error without leaving a stale recording", async () => {
+    backend.transcribe = () => Promise.reject(new Error("Selection action failed"));
+    await renderOverlay();
+
+    await pressHotkey();
+    await pressHotkey();
+    expect(toolbar().className).toContain("is-error");
+    expect(toolbar().className).not.toContain("is-recording");
+    expect(statusDot()).toHaveAttribute("title", "Selection action failed");
+  });
 });
 
 describe("microphone check", () => {
@@ -363,5 +459,26 @@ describe("microphone check", () => {
     expect(saved?.newSettings).toMatchObject({ start_on_login: true });
     // Saving this way must not collapse the panel mid-configuration.
     expect(screen.getByRole("button", { name: "Test microphone" })).toBeInTheDocument();
+  });
+
+  it("persists activation mode and the selection-action privacy opt-in", async () => {
+    await renderOverlay();
+    await openSettings();
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole("combobox", { name: "Activation" }), {
+        target: { value: "push-to-talk" },
+      });
+      await flushMicrotasks();
+    });
+    await click(screen.getByRole("checkbox", { name: /transform selected text/i }));
+    expect(screen.getByText(/selected text is sent to Groq/i)).toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "Save settings" }));
+
+    const saved = backend.callsOf("save_settings").at(-1);
+    expect(saved?.newSettings).toMatchObject({
+      activation_mode: "push-to-talk",
+      selection_actions_enabled: true,
+    });
   });
 });

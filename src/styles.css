@@ -84,8 +84,7 @@ button:disabled {
   border-radius: 999px;
   background: rgb(54, 62, 84);
   border: var(--outline-width, 1px) solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition: border-color 200ms ease;
 }
 
 .loading-pill {
@@ -143,7 +142,6 @@ button:disabled {
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgb(54, 62, 84);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -224,12 +222,10 @@ button:disabled {
 .toolbar-bar.is-recording .record-btn {
   color: var(--border);
   border-color: color-mix(in srgb, var(--border) 30%, transparent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px color-mix(in srgb, var(--border) 25%, transparent);
 }
 
 .toolbar-bar.is-recording .pill-group {
   border-color: color-mix(in srgb, var(--border) 22%, transparent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px color-mix(in srgb, var(--border) 18%, transparent);
 }
 
 /* === State: busy (transcribing) === */
@@ -244,7 +240,6 @@ button:disabled {
    transcribing, which read as the overlay going inactive mid-dictation. */
 .toolbar-bar.is-busy .pill-group {
   border-color: rgba(248, 184, 78, 0.35);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px rgba(248, 184, 78, 0.16);
 }
 
 .toolbar-bar.is-busy .record-btn {
@@ -261,7 +256,6 @@ button:disabled {
 
 .toolbar-bar.is-done .pill-group {
   border-color: color-mix(in srgb, var(--good) 35%, transparent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px color-mix(in srgb, var(--good) 16%, transparent);
 }
 
 .toolbar-bar.is-done .record-btn {
@@ -430,6 +424,19 @@ input[type="range"] {
   height: 18px;
   accent-color: var(--border);
   cursor: pointer;
+}
+
+.check-copy {
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+}
+
+.check-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .two-mini-fields {
